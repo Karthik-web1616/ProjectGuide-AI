@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Your Profile — ProjectGuide-AI</title>
+  <meta name="description" content="Set up your student profile with skills and interests so our AI can personalise your project mentoring experience.">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* ── Page layout ── */
+    .profile-page {
+      padding-top: calc(var(--nav-h) + 2.5rem);
+      padding-bottom: 5rem;
+    }
+
+    /* ── Header ── */
+    .profile-header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    .profile-header h1 {
+      font-size: clamp(1.7rem, 3vw, 2.4rem);
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+    }
+    .profile-header p {
+      font-size: 1rem;
+      color: var(--text-muted);
+    }
+
+    /* ── Form card ── */
+    .form-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 2.5rem;
+      box-shadow: var(--shadow-md);
+    }
+
+    /* ── Step panel ── */
+    .step-panel { display: none; }
+    .step-panel.active {
+      display: block;
+      animation: fadeUp 0.4s ease both;
+    }
+    .step-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+    .step-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 1.75rem;
+      line-height: 1.6;
+    }
+
+    /* ── Nav buttons ── */
+    .form-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      gap: 1rem;
+    }
+    .form-nav .btn { min-width: 130px; }
+
+    /* ── Skill rows ── */
+    .skills-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    /* ── Domain tags ── */
+    .domain-group {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+      gap: 0.6rem;
+    }
+    .domain-tag {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 0.9rem 0.75rem;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+      user-select: none;
+    }
+    .domain-tag input { display: none; }
+    .domain-tag-icon { font-size: 1.5rem; }
+    .domain-tag-name { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); }
+    .domain-tag:hover { border-color: var(--cyan); background: var(--cyan-dim); }
+    .domain-tag.selected {
+      border-color: var(--cyan);
+      background: var(--cyan-dim);
+    }
+    .domain-tag.selected .domain-tag-name { color: var(--cyan); }
+
+    /* ── Year select custom ── */
+    .year-pills {
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+    .year-pill {
+      padding: 0.5rem 1.2rem;
+      border: 1.5px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .year-pill input { display: none; }
+    .year-pill:hover { border-color: var(--cyan); color: var(--text); }
+    .year-pill.selected {
+      background: var(--cyan);
+      border-color: var(--cyan);
+      color: var(--bg);
+    }
+
+    /* ── Profile summary card (step 4) ── */
+    .summary-card {
+      background: linear-gradient(135deg, rgba(56,189,248,0.06), rgba(167,139,250,0.06));
+      border: 1px solid rgba(56,189,248,0.2);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+    }
+    .summary-avatar {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--cyan), var(--purple));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--bg);
+      margin: 0 auto 1.25rem;
+    }
+    .summary-name {
+      text-align: center;
+      font-size: 1.4rem;
+      font-weight: 800;
+      margin-bottom: 0.25rem;
+    }
+    .summary-meta {
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+    .summary-section { margin-bottom: 1.25rem; }
+    .summary-section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.6rem;
+    }
+    .summary-skills {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .summary-skill-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.85rem;
+    }
+    .summary-skill-bar-wrap {
+      flex: 1;
+      height: 4px;
+      background: var(--surface3);
+      border-radius: 999px;
+      margin: 0 0.75rem;
+      overflow: hidden;
+    }
+    .summary-skill-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--cyan), var(--purple));
+      border-radius: 999px;
+      transition: width 0.8s ease;
+    }
+
+    /* ── Progress step bar override ── */
+    .step-bar { margin-bottom: 2rem; }
+
+    /* ── Avatar upload area ── */
+    .avatar-upload {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      padding: 1rem;
+      background: var(--surface2);
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .avatar-upload:hover { border-color: var(--cyan); }
+    .avatar-preview {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--cyan), var(--purple));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--bg);
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .avatar-preview img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+    .avatar-upload-text { font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; }
+    .avatar-upload-text strong { color: var(--text); display: block; }
+    #avatarInput { display: none; }
+
+    @media (max-width: 600px) {
+      .form-card { padding: 1.5rem; }
+      .domain-group { grid-template-columns: 1fr 1fr; }
+      .form-nav .btn { min-width: 100px; font-size: 0.82rem; padding: 0.6rem 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAVBAR ── -->
+<nav class="navbar" id="navbar">
+  <a href="dashboard.html" class="nav-logo">
+    <div class="nav-logo-icon">🎓</div>
+    <div class="nav-logo-text">ProjectGuide<span>-AI</span></div>
+  </a>
+  <ul class="nav-links">
+    <li><a href="dashboard.html">Dashboard</a></li>
+    <li><a href="profile.html" class="active">Profile Setup</a></li>
+    <li><a href="auth.html" id="authNavLink" onclick="Store.remove('currentUser');Store.remove('profile');">Sign Out</a></li>
+  </ul>
+  <div class="nav-actions">
+    <div class="nav-avatar" id="navAvatar" title="Your Profile Avatar">?</div>
+  </div>
+</nav>
+
+<div class="page-bg-glow"></div>
+<div class="page-bg-glow-2"></div>
+
+<!-- ══════════════════════════════════
+     PROFILE / ONBOARDING PAGE
+══════════════════════════════════ -->
+<main class="profile-page">
+  <div class="container" style="max-width:680px">
+
+    <!-- Header -->
+    <div class="profile-header animate-fade-up">
+      <div class="section-badge" style="margin-bottom:.75rem">👤 Student Onboarding</div>
+      <h1>Create Your <span style="color:var(--cyan)">Profile</span></h1>
+      <p>Takes about 3 minutes. Your AI mentor uses this to personalise guidance.</p>
+    </div>
+
+    <!-- Step Progress Bar -->
+    <div class="step-bar animate-fade-up delay-1" id="stepBar">
+      <div class="step-item active" id="stepIndicator1">
+        <div class="step-circle">1</div>
+        <div class="step-label">Basic Info</div>
+      </div>
+      <div class="step-item" id="stepIndicator2">
+        <div class="step-circle">2</div>
+        <div class="step-label">Skills</div>
+      </div>
+      <div class="step-item" id="stepIndicator3">
+        <div class="step-circle">3</div>
+        <div class="step-label">Interests</div>
+      </div>
+      <div class="step-item" id="stepIndicator4">
+        <div class="step-circle">✓</div>
+        <div class="step-label">Review</div>
+      </div>
+    </div>
+
+    <!-- Form Card -->
+    <div class="form-card animate-fade-up delay-2" id="formCard">
+
+      <!-- ════════════
+           STEP 1 — Basic Info
+           ════════════ -->
+      <div class="step-panel active" id="panel1">
+        <h2 class="step-title">🙋 Tell us about yourself</h2>
+        <p class="step-desc">This helps faculty and the AI identify your project in the system.</p>
+
+        <!-- Avatar upload -->
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label">Profile Photo <span style="color:var(--text-faint)">(optional)</span></label>
+          <div class="avatar-upload" id="avatarUploadArea" onclick="document.getElementById('avatarInput').click()">
+            <div class="avatar-preview" id="avatarPreview">?</div>
+            <div class="avatar-upload-text">
+              <strong>Click to upload photo</strong>
+              JPG, PNG up to 2 MB
+            </div>
+          </div>
+          <input type="file" id="avatarInput" accept="image/*">
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label" for="firstName">First Name <span style="color:var(--red)">*</span></label>
+            <input class="form-input" type="text" id="firstName" placeholder="e.g. Arjun" maxlength="40">
+            <span class="form-error" id="err-firstName">Please enter your first name.</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="lastName">Last Name <span style="color:var(--red)">*</span></label>
+            <input class="form-input" type="text" id="lastName" placeholder="e.g. Sharma">
+            <span class="form-error" id="err-lastName">Please enter your last name.</span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top:1rem">
+          <label class="form-label" for="email">Institute Email <span style="color:var(--red)">*</span></label>
+          <input class="form-input" type="email" id="email" placeholder="rollno@college.edu.in">
+          <span class="form-error" id="err-email">Please enter a valid email address.</span>
+        </div>
+
+        <div class="grid-2" style="margin-top:1rem">
+          <div class="form-group">
+            <label class="form-label" for="rollNo">Roll Number <span style="color:var(--red)">*</span></label>
+            <input class="form-input" type="text" id="rollNo" placeholder="e.g. 21CS101">
+            <span class="form-error" id="err-rollNo">Please enter your roll number.</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="branch">Branch / Department <span style="color:var(--red)">*</span></label>
+            <select class="form-select" id="branch">
+              <option value="">Select branch</option>
+              <option>Computer Science & Engineering</option>
+              <option>Information Technology</option>
+              <option>Electronics & Communication</option>
+              <option>Electrical Engineering</option>
+              <option>Mechanical Engineering</option>
+              <option>Data Science & AI</option>
+              <option>Other</option>
+            </select>
+            <span class="form-error" id="err-branch">Please select your branch.</span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top:1rem">
+          <label class="form-label">Year of Study <span style="color:var(--red)">*</span></label>
+          <div class="year-pills" id="yearPills">
+            <label class="year-pill">
+              <input type="radio" name="year" value="1st Year"> 1st Year
+            </label>
+            <label class="year-pill">
+              <input type="radio" name="year" value="2nd Year"> 2nd Year
+            </label>
+            <label class="year-pill selected">
+              <input type="radio" name="year" value="3rd Year" checked> 3rd Year
+            </label>
+            <label class="year-pill">
+              <input type="radio" name="year" value="4th Year"> 4th Year
+            </label>
+            <label class="year-pill">
+              <input type="radio" name="year" value="MCA / MTech"> PG
+            </label>
+          </div>
+          <span class="form-error" id="err-year">Please select your year of study.</span>
+        </div>
+
+        <div class="form-nav">
+          <span style="font-size:0.82rem;color:var(--text-faint)">Step 1 of 3</span>
+          <button class="btn btn-primary" onclick="nextStep(1)">Next: Skills →</button>
+        </div>
+      </div>
+
+      <!-- ════════════
+           STEP 2 — Skill Assessment
+           ════════════ -->
+      <div class="step-panel" id="panel2">
+        <h2 class="step-title">⚡ Rate Your Skills</h2>
+        <p class="step-desc">Our AI uses this to assess project feasibility and match you with the right technology recommendations.</p>
+
+        <div class="alert alert-info" style="margin-bottom:1.5rem;font-size:0.83rem">
+          ℹ️ Be honest — the AI tailors your blueprint based on your actual skill level, not your aspirations.
+        </div>
+
+        <div class="skills-grid" id="skillsGrid">
+          <!-- Rows injected by JS -->
+        </div>
+
+        <div class="form-group" style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border)">
+          <label class="form-label" for="otherSkills">Other Skills <span style="color:var(--text-faint)">(comma separated)</span></label>
+          <input class="form-input" type="text" id="otherSkills" placeholder="e.g. Rust, Figma, Go">
+        </div>
+
+        <div class="form-nav">
+          <button class="btn btn-ghost" onclick="prevStep(2)">← Back</button>
+          <span style="font-size:0.82rem;color:var(--text-faint)">Step 2 of 3</span>
+          <button class="btn btn-primary" onclick="nextStep(2)">Next: Interests →</button>
+        </div>
+      </div>
+
+      <!-- ════════════
+           STEP 3 — Interests / Domain
+           ════════════ -->
+      <div class="step-panel" id="panel3">
+        <h2 class="step-title">🎯 Choose Your Interests</h2>
+        <p class="step-desc">Select all domains that interest you. The AI will suggest project ideas from these areas.</p>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label">Project Domains <span style="color:var(--red)">*</span></label>
+          <div class="domain-group" id="domainGroup">
+            <!-- Injected by JS -->
+          </div>
+          <span class="form-error" id="err-domain">Please select at least one domain.</span>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem">
+          <label class="form-label" for="otherDomains">Other Domains <span style="color:var(--text-faint)">(comma separated)</span></label>
+          <input class="form-input" type="text" id="otherDomains" placeholder="e.g. Quantum Computing, Bioinformatics">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="aboutMe">About Me / Goals <span style="color:var(--text-faint)">(optional)</span></label>
+          <textarea class="form-textarea" id="aboutMe" placeholder="What excites you most about your project? Any specific goals you want to achieve this semester..." maxlength="400" rows="4"></textarea>
+          <div class="char-counter"><span id="aboutMeCount">0</span>/400</div>
+        </div>
+
+        <div class="form-group" style="margin-top:1rem">
+          <label class="form-label" for="teamSize">Preferred Team Size</label>
+          <select class="form-select" id="teamSize">
+            <option value="1">Solo (just me)</option>
+            <option value="2">2 members</option>
+            <option value="3" selected>3 members</option>
+            <option value="4">4 members</option>
+            <option value="5">5 members</option>
+          </select>
+        </div>
+
+        <div class="form-nav">
+          <button class="btn btn-ghost" onclick="prevStep(3)">← Back</button>
+          <span style="font-size:0.82rem;color:var(--text-faint)">Step 3 of 3</span>
+          <button class="btn btn-primary" onclick="nextStep(3)">Review Profile →</button>
+        </div>
+      </div>
+
+      <!-- ════════════
+           STEP 4 — Review & Confirm
+           ════════════ -->
+      <div class="step-panel" id="panel4">
+        <h2 class="step-title" style="text-align:center">✅ Review Your Profile</h2>
+        <p class="step-desc" style="text-align:center">Everything look good? Save to activate your AI mentor.</p>
+
+        <div class="summary-card" id="summaryCard">
+          <div class="summary-avatar" id="summaryAvatar">?</div>
+          <div class="summary-name" id="summaryName">—</div>
+          <div class="summary-meta" id="summaryMeta">—</div>
+
+          <div class="divider"></div>
+
+          <div class="summary-section">
+            <div class="summary-section-title">📧 Contact</div>
+            <div id="summaryEmail" style="font-size:.9rem;color:var(--text-muted)">—</div>
+          </div>
+
+          <div class="summary-section">
+            <div class="summary-section-title">⚡ Skill Levels</div>
+            <div class="summary-skills" id="summarySkills">—</div>
+          </div>
+
+          <div class="summary-section">
+            <div class="summary-section-title">🎯 Interested Domains</div>
+            <div class="tag-group" id="summaryDomains">—</div>
+          </div>
+
+          <div class="summary-section" id="summaryAboutSection" style="display:none">
+            <div class="summary-section-title">💬 About</div>
+            <div id="summaryAbout" style="font-size:.88rem;color:var(--text-muted);line-height:1.65;">—</div>
+          </div>
+        </div>
+
+        <div class="form-nav">
+          <button class="btn btn-ghost" onclick="prevStep(4)">← Edit</button>
+          <button class="btn btn-primary btn-lg" onclick="saveProfile()" id="saveBtn">
+            🚀 Save & Continue
+          </button>
+        </div>
+      </div>
+
+    </div><!-- /form-card -->
+  </div>
+</main>
+
+<!-- ── FOOTER ── -->
+<footer style="background:var(--surface);border-top:1px solid var(--border);padding:2rem 5vw;text-align:center;">
+  <p style="font-size:.8rem;color:var(--text-faint)">© 2026 ProjectGuide-AI — Student Onboarding</p>
+</footer>
+
+<script src="app.js"></script>
+<script>
+let currentStep = 1;
+
+const SKILLS = [
+  { id: 'python',     name: 'Python',                icon: '🐍' },
+  { id: 'javascript', name: 'JavaScript',             icon: '🟨' },
+  { id: 'java',       name: 'Java',                   icon: '☕' },
+  { id: 'c_cpp',      name: 'C / C++',                icon: '⚙️' },
+  { id: 'react',      name: 'React / Next.js',        icon: '⚛️' },
+  { id: 'nodejs',     name: 'Node.js / Express',      icon: '🟢' },
+  { id: 'webdev',     name: 'HTML / CSS',             icon: '🌐' },
+  { id: 'ml',         name: 'Machine Learning',       icon: '🤖' },
+  { id: 'dl',         name: 'Deep Learning',          icon: '🧠' },
+  { id: 'nlp',        name: 'NLP / LLMs',             icon: '💬' },
+  { id: 'cv',         name: 'Computer Vision',        icon: '👁️' },
+  { id: 'ds',         name: 'Data Science / Analysis',icon: '📊' },
+  { id: 'dbms',       name: 'SQL / Databases',        icon: '🗄️' },
+  { id: 'mongodb',    name: 'NoSQL / MongoDB',        icon: '🍃' },
+  { id: 'android',    name: 'Android Development',    icon: '📱' },
+  { id: 'flutter',    name: 'Flutter / React Native', icon: '💙' },
+  { id: 'cloud',      name: 'Cloud / AWS / GCP',      icon: '☁️' },
+  { id: 'devops',     name: 'DevOps / Docker / CI-CD',icon: '🔧' },
+  { id: 'iot',        name: 'IoT / Embedded Systems', icon: '🔌' },
+  { id: 'cyber',      name: 'Cybersecurity / Networking', icon: '🔒' },
+  { id: 'dsa',        name: 'Data Structures & Algorithms', icon: '🧩' },
+  { id: 'os',         name: 'Operating Systems',      icon: '🖥️' },
+  { id: 'blockchain', name: 'Blockchain / Web3',      icon: '🔗' },
+  { id: 'git',        name: 'Git / Version Control',  icon: '🗂️' },
+];
+const LEVEL_LABELS = ['', 'Beginner', 'Basic', 'Intermediate', 'Advanced', 'Expert'];
+const skillRatings = {};
+
+const DOMAINS = [
+  { id: 'aiml',        name: 'AI / Machine Learning', icon: '🤖' },
+  { id: 'web',         name: 'Web Development',       icon: '🌐' },
+  { id: 'mobile',      name: 'Mobile Apps',           icon: '📱' },
+  { id: 'ds',          name: 'Data Science',          icon: '📊' },
+  { id: 'iot',         name: 'IoT & Embedded',        icon: '🔌' },
+  { id: 'cyber',       name: 'Cybersecurity',         icon: '🔒' },
+  { id: 'cloud',       name: 'Cloud Computing',       icon: '☁️' },
+  { id: 'blockchain',  name: 'Blockchain',            icon: '🔗' },
+  { id: 'arvr',        name: 'AR / VR',               icon: '🥽' },
+  { id: 'robotics',    name: 'Robotics',              icon: '🦾' },
+  { id: 'gamedev',     name: 'Game Development',      icon: '🎮' },
+  { id: 'nlp',         name: 'NLP / Chatbots',        icon: '💬' },
+  { id: 'fintech',     name: 'FinTech',               icon: '💳' },
+  { id: 'healthcare',  name: 'Healthcare Tech',       icon: '🏥' },
+  { id: 'edtech',      name: 'EdTech',                icon: '📚' },
+  { id: 'automation',  name: 'Automation / Scripting',icon: '⚡' },
+];
+
+function buildSkillRows() {
+  const grid = document.getElementById('skillsGrid');
+  grid.innerHTML = '';
+  SKILLS.forEach(skill => {
+    skillRatings[skill.id] = skillRatings[skill.id] || 0;
+    const row = document.createElement('div');
+    row.className = 'skill-row';
+    row.innerHTML = `
+      <div class="skill-name">${skill.icon} ${skill.name}</div>
+      <div class="skill-stars" id="stars-${skill.id}">
+        ${[1,2,3,4,5].map(n => `
+          <button class="star-btn" data-skill="${skill.id}" data-val="${n}" onclick="setSkill('${skill.id}', ${n})" title="Level ${n}: ${LEVEL_LABELS[n]}">★</button>
+        `).join('')}
+      </div>
+      <div class="skill-level" id="level-${skill.id}">—</div>
+    `;
+    grid.appendChild(row);
+  });
+}
+
+function setSkill(skillId, val) {
+  skillRatings[skillId] = val;
+  const stars = document.querySelectorAll(`#stars-${skillId} .star-btn`);
+  stars.forEach((s, i) => s.classList.toggle('lit', i < val));
+  document.getElementById(`level-${skillId}`).textContent = LEVEL_LABELS[val];
+}
+
+function buildDomainTags() {
+  const grp = document.getElementById('domainGroup');
+  grp.innerHTML = '';
+  DOMAINS.forEach(d => {
+    const label = document.createElement('label');
+    label.className = 'domain-tag';
+    label.innerHTML = `
+      <input type="checkbox" name="domain" value="${d.id}">
+      <div class="domain-tag-icon">${d.icon}</div>
+      <div class="domain-tag-name">${d.name}</div>
+    `;
+    label.querySelector('input').addEventListener('change', () => {
+      label.classList.toggle('selected', label.querySelector('input').checked);
+    });
+    grp.appendChild(label);
+  });
+}
+
+function initYearPills() {
+  document.querySelectorAll('#yearPills .year-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      document.querySelectorAll('#yearPills .year-pill').forEach(p => p.classList.remove('selected'));
+      pill.classList.add('selected');
+    });
+  });
+}
+
+document.getElementById('avatarInput').addEventListener('change', function () {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const prev = document.getElementById('avatarPreview');
+    prev.innerHTML = `<img src="${e.target.result}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;">`;
+    Store.set('avatarDataUrl', e.target.result);
+    const navAv = document.getElementById('navAvatar');
+    if (navAv) navAv.innerHTML = `<img src="${e.target.result}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;">`;
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById('aboutMe').addEventListener('input', function () {
+  const el = document.getElementById('aboutMeCount');
+  el.textContent = this.value.length;
+  el.parentElement.classList.toggle('warn', this.value.length > 350);
+});
+
+function showErr(id, show) {
+  const el = document.getElementById(`err-${id}`);
+  const inp = document.getElementById(id);
+  if (el) el.classList.toggle('show', show);
+  if (inp) inp.classList.toggle('error', show);
+}
+function clearErrors() {
+  document.querySelectorAll('.form-error').forEach(e => e.classList.remove('show'));
+  document.querySelectorAll('.form-input, .form-select, .form-textarea').forEach(i => i.classList.remove('error'));
+}
+
+function validateStep1() {
+  let ok = true;
+  const f = id => document.getElementById(id).value.trim();
+
+  if (!f('firstName')) { showErr('firstName', true); ok = false; } else showErr('firstName', false);
+  if (!f('lastName'))  { showErr('lastName', true);  ok = false; } else showErr('lastName', false);
+
+  const email = f('email');
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!emailOk) { showErr('email', true); ok = false; } else showErr('email', false);
+
+  if (!f('rollNo'))    { showErr('rollNo', true);   ok = false; } else showErr('rollNo', false);
+  if (!f('branch'))    { showErr('branch', true);   ok = false; } else showErr('branch', false);
+
+  const yearSelected = document.querySelector('#yearPills input:checked');
+  if (!yearSelected)   { showErr('year', true); ok = false; } else showErr('year', false);
+
+  return ok;
+}
+
+function validateStep3() {
+  const anyDomain = document.querySelector('#domainGroup input:checked');
+  if (!anyDomain) { document.getElementById('err-domain').classList.add('show'); return false; }
+  document.getElementById('err-domain').classList.remove('show');
+  return true;
+}
+
+function goToStep(n) {
+  document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`panel${n}`).classList.add('active');
+
+  for (let i = 1; i <= 4; i++) {
+    const si = document.getElementById(`stepIndicator${i}`);
+    if (i < n) {
+      si.classList.remove('active'); si.classList.add('done');
+      si.querySelector('.step-circle').textContent = '✓';
+    } else if (i === n) {
+      si.classList.add('active'); si.classList.remove('done');
+      si.querySelector('.step-circle').textContent = i < 4 ? i : '✓';
+    } else {
+      si.classList.remove('active', 'done');
+      si.querySelector('.step-circle').textContent = i < 4 ? i : '✓';
+    }
+  }
+
+  currentStep = n;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function nextStep(from) {
+  clearErrors();
+  if (from === 1 && !validateStep1()) return;
+  if (from === 3 && !validateStep3()) return;
+
+  if (from === 3) {
+    buildSummary();
+  }
+  goToStep(from + 1);
+}
+
+function prevStep(from) {
+  goToStep(from - 1);
+}
+
+function buildSummary() {
+  const firstName  = document.getElementById('firstName').value.trim();
+  const lastName   = document.getElementById('lastName').value.trim();
+  const email      = document.getElementById('email').value.trim();
+  const rollNo     = document.getElementById('rollNo').value.trim();
+  const branch     = document.getElementById('branch').value;
+  const year       = document.querySelector('#yearPills input:checked')?.value || '—';
+  const teamSize   = document.getElementById('teamSize').value;
+  const about      = document.getElementById('aboutMe').value.trim();
+
+  const av = document.getElementById('summaryAvatar');
+  const storedAvatar = Store.get('avatarDataUrl');
+  if (storedAvatar) {
+    av.innerHTML = `<img src="${storedAvatar}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+  } else {
+    av.textContent = firstName.charAt(0).toUpperCase();
+  }
+
+  document.getElementById('summaryName').textContent = `${firstName} ${lastName}`;
+  document.getElementById('summaryMeta').textContent = `${rollNo} · ${branch} · ${year} · Team of ${teamSize}`;
+  document.getElementById('summaryEmail').textContent = email;
+
+  const skillsEl = document.getElementById('summarySkills');
+  skillsEl.innerHTML = '';
+  SKILLS.forEach(sk => {
+    const r = skillRatings[sk.id] || 0;
+    if (r === 0) return;
+    const row = document.createElement('div');
+    row.className = 'summary-skill-row';
+    row.innerHTML = `
+      <span style="min-width:130px;font-size:.85rem">${sk.icon} ${sk.name}</span>
+      <div class="summary-skill-bar-wrap">
+        <div class="summary-skill-bar" style="width:0%" data-width="${(r/5)*100}%"></div>
+      </div>
+      <span style="font-size:.75rem;color:var(--text-faint);min-width:70px;text-align:right">${LEVEL_LABELS[r]}</span>
+    `;
+    skillsEl.appendChild(row);
+  });
+
+  const otherSkills = document.getElementById('otherSkills').value.trim();
+  if (otherSkills) {
+    const row = document.createElement('div');
+    row.className = 'summary-skill-row';
+    row.innerHTML = `<span style="font-size:.85rem">➕ Other: ${otherSkills}</span>`;
+    skillsEl.appendChild(row);
+  }
+
+  if (!skillsEl.children.length) {
+    skillsEl.innerHTML = '<span style="font-size:.85rem;color:var(--text-faint)">No skills rated</span>';
+  }
+
+  setTimeout(() => {
+    document.querySelectorAll('.summary-skill-bar').forEach(bar => {
+      bar.style.width = bar.dataset.width;
+    });
+  }, 100);
+
+  const domainsEl = document.getElementById('summaryDomains');
+  domainsEl.innerHTML = '';
+  document.querySelectorAll('#domainGroup input:checked').forEach(inp => {
+    const d = DOMAINS.find(x => x.id === inp.value);
+    if (!d) return;
+    const span = document.createElement('span');
+    span.className = 'tag-option selected';
+    span.textContent = `${d.icon} ${d.name}`;
+    domainsEl.appendChild(span);
+  });
+
+  const otherDomains = document.getElementById('otherDomains').value.trim();
+  if (otherDomains) {
+    const span = document.createElement('span');
+    span.className = 'tag-option selected';
+    span.textContent = `➕ ${otherDomains}`;
+    domainsEl.appendChild(span);
+  }
+
+  const aboutSection = document.getElementById('summaryAboutSection');
+  if (about) {
+    aboutSection.style.display = 'block';
+    document.getElementById('summaryAbout').textContent = about;
+  } else {
+    aboutSection.style.display = 'none';
+  }
+}
+
+function saveProfile() {
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Saving...';
+
+  const firstName  = document.getElementById('firstName').value.trim();
+  const lastName   = document.getElementById('lastName').value.trim();
+  const email      = document.getElementById('email').value.trim();
+  const rollNo     = document.getElementById('rollNo').value.trim();
+  const branch     = document.getElementById('branch').value;
+  const year       = document.querySelector('#yearPills input:checked')?.value || '';
+  const teamSize   = document.getElementById('teamSize').value;
+  const about      = document.getElementById('aboutMe').value.trim();
+
+  const domains = Array.from(document.querySelectorAll('#domainGroup input:checked'))
+    .map(i => i.value);
+
+  const otherSkills = document.getElementById('otherSkills').value.trim();
+  const otherDomains = document.getElementById('otherDomains').value.trim();
+
+  const avatarData = Store.get('avatarDataUrl') || (Store.get('profile') && Store.get('profile').avatar) || '';
+
+  const profile = {
+    name: `${firstName} ${lastName}`,
+    firstName, lastName, email, rollNo, branch, year, teamSize, about,
+    avatar: avatarData,
+    domains, skills: skillRatings,
+    otherSkills, otherDomains,
+    createdAt: new Date().toISOString(),
+  };
+
+  Store.set('profile', profile);
+
+  const isUpdate = Store.get('profile_exists_flag') === true;
+  Store.set('profile_exists_flag', true);
+
+  setTimeout(() => {
+    btn.innerHTML = '✅ Saved!';
+    showToast(isUpdate ? 'Profile updated successfully!' : 'Profile saved! Opening your dashboard...', '🎉', 2500);
+    setTimeout(() => { window.location.href = 'dashboard.html'; }, 1800);
+  }, 800);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  buildSkillRows();
+  buildDomainTags();
+  initYearPills();
+
+  // Load from session or profile
+  const user = Store.get('currentUser');
+  const existing = Store.get('profile');
+
+  if (existing && Object.keys(existing).length > 0) {
+    Store.set('profile_exists_flag', true);
+    document.getElementById('saveBtn').innerHTML = '🚀 Update Profile';
+    
+    // Add cancel button
+    const nav = document.querySelector('#panel4 .form-nav');
+    if (nav && !document.getElementById('cancelProfileBtn')) {
+      const cancelBtn = document.createElement('button');
+      cancelBtn.id = 'cancelProfileBtn';
+      cancelBtn.className = 'btn btn-secondary btn-lg';
+      cancelBtn.style.marginRight = '1rem';
+      cancelBtn.textContent = 'Back to Dashboard';
+      cancelBtn.onclick = () => window.location.href = 'dashboard.html';
+      nav.insertBefore(cancelBtn, document.getElementById('saveBtn'));
+    }
+  }
+
+  if (user && !existing) {
+    const parts = (user.name || '').split(' ');
+    if (parts[0]) document.getElementById('firstName').value = parts[0];
+    if (parts[1]) document.getElementById('lastName').value = parts[1];
+    if (user.email) document.getElementById('email').value = user.email;
+    if (user.rollNo) document.getElementById('rollNo').value = user.rollNo;
+  } else if (existing) {
+    if (existing.firstName) document.getElementById('firstName').value = existing.firstName;
+    if (existing.lastName)  document.getElementById('lastName').value  = existing.lastName;
+    if (existing.email)     document.getElementById('email').value     = existing.email;
+    if (existing.rollNo)    document.getElementById('rollNo').value    = existing.rollNo;
+    if (existing.branch)    document.getElementById('branch').value    = existing.branch;
+    if (existing.about)     { document.getElementById('aboutMe').value = existing.about; document.getElementById('aboutMeCount').textContent = existing.about.length; }
+    if (existing.teamSize)  document.getElementById('teamSize').value  = existing.teamSize;
+    if (existing.otherSkills) document.getElementById('otherSkills').value = existing.otherSkills;
+    if (existing.otherDomains) document.getElementById('otherDomains').value = existing.otherDomains;
+
+    if (existing.year) {
+      document.querySelectorAll('#yearPills input').forEach(inp => {
+        if (inp.value === existing.year) { inp.checked = true; inp.closest('.year-pill').classList.add('selected'); }
+      });
+    }
+    if (existing.skills) {
+      Object.entries(existing.skills).forEach(([k, v]) => setSkill(k, v));
+    }
+    if (existing.domains) {
+      setTimeout(() => {
+        document.querySelectorAll('#domainGroup input').forEach(inp => {
+          if (existing.domains.includes(inp.value)) {
+            inp.checked = true; inp.closest('.domain-tag').classList.add('selected');
+          }
+        });
+      }, 50);
+    }
+
+    const storedAvatar = Store.get('avatarDataUrl') || (existing && existing.avatar) || (user && user.avatar);
+    if (storedAvatar) {
+      const prev = document.getElementById('avatarPreview');
+      if (prev) prev.innerHTML = `<img src="${storedAvatar}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;">`;
+      const av = document.getElementById('navAvatar');
+      if (av) av.innerHTML = `<img src="${storedAvatar}" alt="avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;">`;
+    } else {
+      const av = document.getElementById('navAvatar');
+      if (av && existing.name) av.textContent = existing.name.charAt(0).toUpperCase();
+    }
+  }
+});
+</script>
+</body>
+</html>

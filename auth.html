@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — ProjectGuide-AI</title>
+  <meta name="description" content="Sign in or create your account to access AI-guided academic project planning and mentorship.">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* ── Auth page layout ── */
+    body { display: flex; flex-direction: column; min-height: 100vh; }
+
+    .auth-page {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1.5rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .auth-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      width: 100%;
+      max-width: 900px;
+      min-height: 560px;
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      box-shadow: var(--shadow-lg);
+      border: 1px solid var(--border);
+    }
+
+    /* Left panel */
+    .auth-left {
+      background: linear-gradient(145deg, #1e3a6e 0%, #0f1f40 100%);
+      padding: 3rem 2.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+    .auth-left::before {
+      content: '';
+      position: absolute;
+      top: -60px; right: -60px;
+      width: 220px; height: 220px;
+      border-radius: 50%;
+      background: rgba(59,130,246,0.12);
+    }
+    .auth-left::after {
+      content: '';
+      position: absolute;
+      bottom: -40px; left: -40px;
+      width: 180px; height: 180px;
+      border-radius: 50%;
+      background: rgba(59,130,246,0.08);
+    }
+    .auth-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #fff;
+      position: relative;
+      z-index: 1;
+    }
+    .auth-brand-icon {
+      width: 36px; height: 36px;
+      background: var(--blue);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+    }
+    .auth-left-body {
+      position: relative;
+      z-index: 1;
+    }
+    .auth-left-title {
+      font-size: 1.7rem;
+      font-weight: 800;
+      color: #fff;
+      line-height: 1.25;
+      margin-bottom: 1rem;
+    }
+    .auth-left-desc {
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.65);
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+    .auth-feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+    .auth-feature-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.75);
+    }
+    .auth-feature-list li::before {
+      content: '✓';
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: rgba(59,130,246,0.3);
+      color: #60a5fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+    .auth-left-footer {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.35);
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Right panel (form) */
+    .auth-right {
+      background: var(--surface);
+      padding: 2.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .auth-form-header {
+      margin-bottom: 1.75rem;
+    }
+    .auth-form-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      margin-bottom: 0.35rem;
+    }
+    .auth-form-sub {
+      font-size: 0.86rem;
+      color: var(--text-muted);
+    }
+
+    /* Tab switcher */
+    .auth-tabs {
+      display: flex;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 3px;
+      margin-bottom: 1.5rem;
+      gap: 3px;
+    }
+    .auth-tab {
+      flex: 1;
+      text-align: center;
+      padding: 0.55rem 0.5rem;
+      font-size: 0.84rem;
+      font-weight: 600;
+      border-radius: 8px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      background: transparent;
+    }
+    .auth-tab.active {
+      background: var(--blue);
+      color: #fff;
+    }
+
+    /* Role selector */
+    .role-pills {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .role-pill {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0.5rem 0.75rem;
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .role-pill input { display: none; }
+    .role-pill.selected {
+      background: var(--blue-dim);
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .form-extra {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .form-extra a {
+      color: var(--blue);
+      transition: opacity 0.2s;
+    }
+    .form-extra a:hover { opacity: 0.8; }
+
+    .demo-hint {
+      margin-top: 1.1rem;
+      padding: 0.7rem 0.9rem;
+      background: var(--blue-dim);
+      border: 1px dashed rgba(59,130,246,0.25);
+      border-radius: var(--radius);
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      text-align: center;
+    }
+    .demo-hint strong { color: var(--blue); }
+    .demo-hint span {
+      cursor: pointer;
+      text-decoration: underline;
+      color: var(--text);
+      transition: color 0.2s;
+    }
+    .demo-hint span:hover { color: var(--blue); }
+
+    /* Mobile: stack panels */
+    @media (max-width: 700px) {
+      .auth-split { grid-template-columns: 1fr; min-height: auto; }
+      .auth-left { display: none; }
+      .auth-right { padding: 2rem 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="page-bg-glow"></div>
+<div class="page-bg-glow-2"></div>
+
+<main class="auth-page">
+  <div class="auth-split animate-fade-up">
+
+    <!-- Left — Branding Panel -->
+    <div class="auth-left">
+      <div class="auth-brand">
+        <div class="auth-brand-icon">🎓</div>
+        <span>ProjectGuide<span style="color:#60a5fa">-AI</span></span>
+      </div>
+
+      <div class="auth-left-body">
+        <h1 class="auth-left-title">
+          Your AI-Powered<br>Project Guide
+        </h1>
+        <p class="auth-left-desc">
+          Submit your rough idea, get an instant blueprint, and follow a guided 8-week milestone roadmap.
+        </p>
+        <ul class="auth-feature-list">
+          <li>Instant feasibility check &amp; scope analysis</li>
+          <li>AI-recommended tech stack for your skills</li>
+          <li>Week-wise milestone roadmap generation</li>
+          <li>Conversational mentor — ask anything, anytime</li>
+          <li>Faculty review &amp; progress tracking</li>
+        </ul>
+      </div>
+
+      <div class="auth-left-footer">
+        © 2026 ProjectGuide-AI — Infosys Project
+      </div>
+    </div>
+
+    <!-- Right — Form Panel -->
+    <div class="auth-right">
+      <div class="auth-form-header">
+        <h2 class="auth-form-title" id="authFormTitle">Welcome Back</h2>
+        <p class="auth-form-sub" id="authSubtitle">Sign in to your account to continue</p>
+      </div>
+
+      <!-- Tabs: Sign In / Register -->
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">Sign In</button>
+        <button class="auth-tab" id="tabRegister" onclick="switchAuthTab('register')">Create Account</button>
+      </div>
+
+      <!-- Role Selector -->
+      <div class="role-pills" id="rolePills">
+        <label class="role-pill selected" id="roleStudent">
+          <input type="radio" name="userRole" value="student" checked>
+          👨‍🎓 Student
+        </label>
+        <label class="role-pill" id="roleFaculty">
+          <input type="radio" name="userRole" value="faculty">
+          👨‍🏫 Faculty
+        </label>
+      </div>
+
+      <!-- Form -->
+      <form class="auth-form" id="authForm" onsubmit="handleAuthSubmit(event)">
+
+        <div class="form-group" id="groupFullName" style="display:none;">
+          <label class="form-label" for="authFullName">Full Name</label>
+          <input class="form-input" type="text" id="authFullName" placeholder="e.g. Arjun Sharma">
+          <span class="form-error" id="err-authFullName">Please enter your full name.</span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="authEmail">Institute Email</label>
+          <input class="form-input" type="email" id="authEmail" placeholder="student@college.edu.in" required autocomplete="email">
+          <span class="form-error" id="err-authEmail">Please enter a valid institute email.</span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="authPassword">Password</label>
+          <input class="form-input" type="password" id="authPassword" placeholder="••••••••" required autocomplete="current-password">
+          <span class="form-error" id="err-authPassword">Password must be at least 6 characters.</span>
+        </div>
+
+        <div class="form-group" id="groupRollNo" style="display:none;">
+          <label class="form-label" for="authRollNo">Roll Number / Employee ID</label>
+          <input class="form-input" type="text" id="authRollNo" placeholder="e.g. 21CS101">
+        </div>
+
+        <div class="form-extra" id="authRemember">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="rememberMe" checked style="accent-color:var(--blue);"> Remember me
+          </label>
+          <a href="#" onclick="showToast('Password reset link sent to your email!','📧'); return false;">Forgot password?</a>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-full btn-lg" id="authSubmitBtn" style="margin-top:0.25rem;">
+          Sign In
+        </button>
+      </form>
+
+      <!-- Quick Demo Hint -->
+      <div class="demo-hint" id="demoHint">
+        💡 <strong>Demo:</strong>
+        <span onclick="fillDemoStudent()">Student</span> or
+        <span onclick="fillDemoFaculty()">Faculty</span> quick login
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script src="app.js"></script>
+<script>
+let currentMode = 'login';
+let selectedRole = 'student';
+
+// Handle role pills
+document.querySelectorAll('#rolePills .role-pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('#rolePills .role-pill').forEach(p => p.classList.remove('selected'));
+    pill.classList.add('selected');
+    selectedRole = pill.querySelector('input').value;
+  });
+});
+
+function switchAuthTab(mode) {
+  currentMode = mode;
+  const isReg = mode === 'register';
+
+  document.getElementById('tabLogin').classList.toggle('active', !isReg);
+  document.getElementById('tabRegister').classList.toggle('active', isReg);
+
+  document.getElementById('authFormTitle').textContent = isReg ? 'Create Account' : 'Welcome Back';
+  document.getElementById('authSubtitle').textContent = isReg
+    ? 'Set up your account to start AI project mentoring'
+    : 'Sign in to your account to continue';
+
+  document.getElementById('groupFullName').style.display = isReg ? 'block' : 'none';
+  document.getElementById('groupRollNo').style.display   = isReg ? 'block' : 'none';
+  document.getElementById('authRemember').style.display  = isReg ? 'none'  : 'flex';
+  document.getElementById('authSubmitBtn').textContent   = isReg ? '✨ Create Account & Proceed' : 'Sign In';
+}
+
+function fillDemoStudent() {
+  document.getElementById('authEmail').value    = 'arjun.sharma@college.edu.in';
+  document.getElementById('authPassword').value = 'password123';
+  document.getElementById('roleStudent').click();
+  showToast('Filled Student demo credentials', '👨‍🎓');
+}
+
+function fillDemoFaculty() {
+  document.getElementById('authEmail').value    = 'prof.verma@college.edu.in';
+  document.getElementById('authPassword').value = 'faculty123';
+  document.getElementById('roleFaculty').click();
+  showToast('Filled Faculty demo credentials', '👨‍🏫');
+}
+
+function handleAuthSubmit(e) {
+  e.preventDefault();
+
+  const email    = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const fullName = document.getElementById('authFullName').value.trim();
+  const rollNo   = document.getElementById('authRollNo').value.trim();
+
+  if (!email || !password) {
+    showToast('Please fill all required fields.', '⚠️');
+    return;
+  }
+  if (password.length < 6) {
+    document.getElementById('err-authPassword').classList.add('show');
+    return;
+  }
+
+  const btn = document.getElementById('authSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Authenticating...';
+
+  const user = {
+    email,
+    name: fullName || (email.split('@')[0].replace('.', ' ').replace(/(^\w|\s\w)/g, m => m.toUpperCase())),
+    role: selectedRole,
+    rollNo: rollNo || (selectedRole === 'faculty' ? 'FAC001' : '21CS101'),
+    loggedIn: true,
+    authTime: new Date().toISOString()
+  };
+
+  Store.set('currentUser', user);
+
+  if (currentMode === 'register' || !Store.get('profile')) {
+    const existing = Store.get('profile') || {};
+    Store.set('profile', {
+      ...existing,
+      name: user.name,
+      firstName: user.name.split(' ')[0] || '',
+      lastName:  user.name.split(' ').slice(1).join(' ') || '',
+      email: user.email,
+      rollNo: user.rollNo
+    });
+  }
+
+  setTimeout(() => {
+    btn.textContent = '✅ Success!';
+    showToast(`Welcome, ${user.name}!`, '🎉');
+
+    setTimeout(() => {
+      if (selectedRole === 'faculty') {
+        window.location.href = 'faculty-dashboard.html';
+      } else {
+        const profile = Store.get('profile');
+        if (!profile || !profile.skills || Object.keys(profile.skills).length === 0) {
+          window.location.href = 'profile.html';
+        } else {
+          window.location.href = 'dashboard.html';
+        }
+      }
+    }, 900);
+  }, 800);
+}
+
+// Auto-fill email if previously logged in
+document.addEventListener('DOMContentLoaded', () => {
+  const current = Store.get('currentUser');
+  // If already logged in, redirect immediately
+  if (current && current.loggedIn) {
+    if (current.role === 'faculty') {
+      window.location.replace('faculty-dashboard.html');
+    } else {
+      const profile = Store.get('profile');
+      if (!profile || !profile.skills || Object.keys(profile.skills).length === 0) {
+        window.location.replace('profile.html');
+      } else {
+        window.location.replace('dashboard.html');
+      }
+    }
+    return;
+  }
+  if (current && current.email) {
+    document.getElementById('authEmail').value = current.email;
+  }
+});
+</script>
+</body>
+</html>

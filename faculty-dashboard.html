@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Faculty Dashboard — ProjectGuide-AI</title>
+  <meta name="description" content="Faculty mentor dashboard — review student projects, track progress, and assign feedback.">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .dashboard-page {
+      padding-top: calc(var(--nav-h) + 2rem);
+      padding-bottom: 4rem;
+    }
+
+    /* Faculty header */
+    .faculty-header {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.75rem;
+      flex-wrap: wrap;
+    }
+    .faculty-info { display: flex; align-items: center; gap: 1rem; }
+    .faculty-avatar {
+      width: 50px; height: 50px;
+      border-radius: 50%;
+      background: var(--purple);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .faculty-name { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.2rem; }
+    .faculty-role { font-size: 0.82rem; color: var(--text-muted); }
+
+    /* Stats row */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.75rem;
+    }
+
+    /* Main layout */
+    .faculty-grid {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 1.5rem;
+      align-items: start;
+    }
+
+    /* Section label */
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 0.85rem;
+    }
+
+    /* Student table wrapper */
+    .table-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .table-toolbar {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .table-toolbar-title { font-weight: 700; font-size: 0.95rem; }
+    .table-search {
+      background: var(--surface2);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.45rem 0.85rem;
+      font-size: 0.84rem;
+      color: var(--text);
+      outline: none;
+      width: 220px;
+      transition: border-color 0.2s;
+    }
+    .table-search:focus { border-color: var(--blue); }
+    .table-search::placeholder { color: var(--text-faint); }
+
+    /* Student row */
+    .student-row {
+      display: grid;
+      grid-template-columns: 2.5fr 1.5fr 1fr 1fr 120px;
+      align-items: center;
+      padding: 0.9rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      gap: 1rem;
+      transition: background 0.15s;
+    }
+    .student-row:last-child { border-bottom: none; }
+    .student-row:hover { background: var(--surface2); }
+    .student-row.header {
+      background: var(--surface2);
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.65rem 1.25rem;
+    }
+
+    .student-name-cell { display: flex; align-items: center; gap: 0.75rem; }
+    .s-avatar {
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      background: var(--blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .s-name { font-size: 0.88rem; font-weight: 600; margin-bottom: 0.1rem; }
+    .s-roll { font-size: 0.74rem; color: var(--text-faint); font-family: var(--mono); }
+    .s-project { font-size: 0.82rem; color: var(--text-muted); }
+    .s-progress-wrap { display: flex; flex-direction: column; gap: 4px; }
+    .s-progress-label { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-faint); }
+
+    /* Status badges */
+    .status-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.22rem 0.65rem;
+      border-radius: 999px;
+    }
+    .status-active    { background: var(--green-dim);  color: var(--green); }
+    .status-review    { background: var(--yellow-dim); color: var(--yellow); }
+    .status-pending   { background: var(--surface2);   color: var(--text-faint); }
+    .status-submitted { background: var(--blue-dim);   color: var(--blue); }
+
+    /* Action row buttons */
+    .row-actions { display: flex; gap: 0.4rem; justify-content: flex-end; }
+
+    /* Detail drawer (modal) */
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 2000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .drawer-overlay.open { opacity: 1; pointer-events: all; }
+    .drawer {
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      width: 420px;
+      max-width: 95vw;
+      height: 100%;
+      overflow-y: auto;
+      padding: 2rem 1.75rem;
+      transform: translateX(100%);
+      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .drawer-overlay.open .drawer { transform: translateX(0); }
+    .drawer-close {
+      position: absolute;
+      top: 1rem; right: 1.5rem;
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      color: var(--text-faint);
+      cursor: pointer;
+    }
+    .drawer-close:hover { color: var(--text); }
+    .drawer-title   { font-size: 1.1rem; font-weight: 800; margin-bottom: 0.3rem; }
+    .drawer-sub     { font-size: 0.83rem; color: var(--text-muted); margin-bottom: 1.5rem; }
+    .drawer-section { margin-bottom: 1.5rem; }
+    .drawer-section-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 0.7rem;
+    }
+
+    /* Skill display in drawer */
+    .skill-display-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.84rem;
+      margin-bottom: 0.5rem;
+    }
+    .skill-display-name { min-width: 130px; color: var(--text-muted); }
+
+    /* Milestone mini list in drawer */
+    .mini-ms {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.55rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+    }
+    .mini-ms:last-child { border-bottom: none; }
+    .mini-ms-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .mini-ms-dot.done    { background: var(--green); }
+    .mini-ms-dot.current { background: var(--blue); }
+    .mini-ms-dot.pending { background: var(--surface3); }
+
+    /* Feedback area */
+    .feedback-area {
+      background: var(--surface2);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.75rem 1rem;
+      font-size: 0.86rem;
+      color: var(--text);
+      outline: none;
+      width: 100%;
+      resize: vertical;
+      min-height: 80px;
+      transition: border-color 0.2s;
+    }
+    .feedback-area:focus { border-color: var(--blue); }
+    .feedback-area::placeholder { color: var(--text-faint); }
+
+    /* Right sidebar */
+    .sidebar-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem;
+      margin-bottom: 1.1rem;
+    }
+    .sidebar-card-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+    .activity-item {
+      display: flex;
+      gap: 0.7rem;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 5px;
+    }
+
+    @media (max-width: 960px) {
+      .faculty-grid { grid-template-columns: 1fr; }
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .student-row { grid-template-columns: 1fr; }
+      .student-row.header { display: none; }
+    }
+    @media (max-width: 600px) {
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .faculty-header { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAVBAR ── -->
+<nav class="navbar" id="navbar">
+  <a href="faculty-dashboard.html" class="nav-logo">
+    <div class="nav-logo-icon">🎓</div>
+    <div class="nav-logo-text">ProjectGuide<span>-AI</span></div>
+  </a>
+  <ul class="nav-links">
+    <li><a href="faculty-dashboard.html" class="active">Dashboard</a></li>
+    <li><a href="#" onclick="filterStudents('review')">Pending Reviews</a></li>
+    <li><a href="#" onclick="filterStudents('all')">All Students</a></li>
+  </ul>
+  <div class="nav-actions">
+    <div class="nav-avatar" id="navAvatar" style="background:var(--purple);">F</div>
+    <a href="auth.html" class="btn btn-ghost btn-sm" onclick="logout(); return false;">Sign Out</a>
+  </div>
+</nav>
+
+<div class="page-bg-glow"></div>
+<div class="page-bg-glow-2"></div>
+
+<!-- ── Student Detail Drawer ── -->
+<div class="drawer-overlay" id="drawerOverlay">
+  <div class="drawer" id="detailDrawer">
+    <button class="drawer-close" onclick="closeDrawer()">×</button>
+    <div id="drawerContent">
+      <!-- Injected by JS -->
+    </div>
+  </div>
+</div>
+
+<main class="dashboard-page">
+  <div class="container-wide">
+
+    <!-- Faculty Header -->
+    <div class="faculty-header animate-fade-up">
+      <div class="faculty-info">
+        <div class="faculty-avatar" id="facAvatar">F</div>
+        <div>
+          <div class="faculty-name" id="facName">Faculty Mentor</div>
+          <div class="faculty-role" id="facRole">👨‍🏫 Faculty Guide · ProjectGuide-AI</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+        <button class="btn btn-secondary btn-sm" onclick="exportReport()">📊 Export Report</button>
+        <button class="btn btn-primary btn-sm" onclick="filterStudents('review')">🔔 Pending Reviews</button>
+      </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="stats-row animate-fade-up delay-1">
+      <div class="stat-card">
+        <div class="stat-card-label">Total Students</div>
+        <div class="stat-card-value" id="statTotal">0</div>
+        <div class="stat-card-sub">enrolled this semester</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">Active Projects</div>
+        <div class="stat-card-value" id="statActive">0</div>
+        <div class="stat-card-sub">in progress</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">Pending Review</div>
+        <div class="stat-card-value" id="statPending">0</div>
+        <div class="stat-card-sub">need your attention</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">Avg. Progress</div>
+        <div class="stat-card-value" id="statAvgProg">0%</div>
+        <div class="stat-card-sub">across all projects</div>
+      </div>
+    </div>
+
+    <!-- Main grid -->
+    <div class="faculty-grid">
+
+      <!-- Left: Student Table -->
+      <div>
+        <div class="section-label">Student Projects</div>
+        <div class="table-card animate-fade-up delay-2">
+          <div class="table-toolbar">
+            <div class="table-toolbar-title" id="tableTitle">All Students</div>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+              <input class="table-search" id="searchInput" type="text"
+                placeholder="🔍 Search students..."
+                oninput="renderStudentTable()">
+              <select class="table-search" id="filterStatus" onchange="renderStudentTable()" style="width:130px;">
+                <option value="all">All Status</option>
+                <option value="active">Active</option>
+                <option value="review">Pending Review</option>
+                <option value="pending">Not Started</option>
+                <option value="submitted">Submitted</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Table Header -->
+          <div class="student-row header">
+            <div>Student</div>
+            <div>Project</div>
+            <div>Progress</div>
+            <div>Status</div>
+            <div style="text-align:right;">Actions</div>
+          </div>
+
+          <!-- Rows injected by JS -->
+          <div id="studentTableBody"></div>
+        </div>
+      </div>
+
+      <!-- Right: Sidebar -->
+      <div>
+        <div class="section-label">Faculty Actions</div>
+        <div class="sidebar-card animate-fade-up delay-3" style="margin-bottom:1.5rem;">
+          <div class="sidebar-card-title">📢 Broadcast Announcement</div>
+          <textarea class="feedback-area" id="announcementText" placeholder="Write a message to all students..."></textarea>
+          <button class="btn btn-primary btn-sm btn-full" onclick="document.getElementById('announcementText').value=''; showToast('Announcement broadcasted!', '📢')" style="margin-top:0.5rem;">Send Announcement</button>
+        </div>
+
+        <div class="section-label">Recent Activity</div>
+        <div class="sidebar-card animate-fade-up delay-3">
+          <div class="sidebar-card-title">🔔 Activity Feed</div>
+          <div id="activityFeed">
+            <!-- Injected by JS -->
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-top:1rem;">Submission Status</div>
+        <div class="sidebar-card">
+          <div class="sidebar-card-title">📌 Project Status Overview</div>
+          <div id="statusOverview">
+            <!-- Injected by JS -->
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<script src="app.js"></script>
+<script>
+/* ── Auth guard (faculty only) ── */
+const currentUser = requireAuth('faculty');
+if (!currentUser) throw new Error('Not authenticated');
+
+/* ── Mock student data ── */
+const STUDENTS = [
+  {
+    id: 1,
+    name: 'Arjun Sharma',    roll: '21CS101', branch: 'CSE', year: '3rd Year',
+    email: 'arjun.sharma@college.edu.in',
+    project: { title: 'Smart Attendance System', domain: 'aiml', techStack: ['Python','OpenCV','Flask','React'], feasibility: 92, milestonesDone: 3, desc: 'A facial recognition based attendance system with real-time analytics.' },
+    skills: { python: 4, ml: 3, webdev: 3, cv: 4 },
+    status: 'active',
+    lastActive: '2026-08-26T10:30:00Z',
+  },
+  {
+    id: 2,
+    name: 'Priya Mehta',     roll: '21CS102', branch: 'CSE', year: '3rd Year',
+    email: 'priya.mehta@college.edu.in',
+    project: { title: 'E-Commerce Recommendation Engine', domain: 'web', techStack: ['React','Node.js','MongoDB','TensorFlow.js'], feasibility: 85, milestonesDone: 2, desc: 'Product recommendation engine using collaborative filtering.' },
+    skills: { webdev: 5, python: 3, ds: 3, ml: 2 },
+    status: 'review',
+    lastActive: '2026-08-25T14:00:00Z',
+  },
+  {
+    id: 3,
+    name: 'Rahul Patel',     roll: '21IT103', branch: 'IT', year: '3rd Year',
+    email: 'rahul.patel@college.edu.in',
+    project: { title: 'IoT Smart Home Dashboard', domain: 'iot', techStack: ['Arduino','MQTT','Node.js','React'], feasibility: 88, milestonesDone: 5, desc: 'Centralized dashboard for smart home IoT devices with automation rules.' },
+    skills: { iot: 4, webdev: 3, python: 3 },
+    status: 'active',
+    lastActive: '2026-08-27T08:00:00Z',
+  },
+  {
+    id: 4,
+    name: 'Sneha Reddy',     roll: '21DS104', branch: 'Data Science', year: '3rd Year',
+    email: 'sneha.reddy@college.edu.in',
+    project: { title: 'Stock Price Prediction Model', domain: 'ds', techStack: ['Python','LSTM','Pandas','Streamlit'], feasibility: 79, milestonesDone: 1, desc: 'Time-series forecasting model for stock market using LSTM networks.' },
+    skills: { python: 4, ds: 5, ml: 4 },
+    status: 'review',
+    lastActive: '2026-08-24T16:45:00Z',
+  },
+  {
+    id: 5,
+    name: 'Karthik Iyer',    roll: '21CS105', branch: 'CSE', year: '3rd Year',
+    email: 'karthik.iyer@college.edu.in',
+    project: null,
+    skills: { python: 2, webdev: 3 },
+    status: 'pending',
+    lastActive: '2026-08-20T09:00:00Z',
+  },
+  {
+    id: 6,
+    name: 'Anjali Singh',    roll: '21CS106', branch: 'CSE', year: '3rd Year',
+    email: 'anjali.singh@college.edu.in',
+    project: { title: 'Mental Health Chatbot', domain: 'aiml', techStack: ['Python','LangChain','OpenAI API','React'], feasibility: 91, milestonesDone: 6, desc: 'Empathetic AI chatbot for student mental health support using LLMs.' },
+    skills: { python: 4, nlp: 5, webdev: 3 },
+    status: 'submitted',
+    lastActive: '2026-08-27T11:00:00Z',
+  },
+  {
+    id: 7,
+    name: 'Dev Malhotra',    roll: '21EC107', branch: 'ECE', year: '3rd Year',
+    email: 'dev.malhotra@college.edu.in',
+    project: { title: 'Blockchain Voting System', domain: 'blockchain', techStack: ['Solidity','Ethereum','React','MetaMask'], feasibility: 83, milestonesDone: 2, desc: 'Decentralized, tamper-proof voting system for college elections.' },
+    skills: { python: 3, webdev: 3 },
+    status: 'active',
+    lastActive: '2026-08-26T17:00:00Z',
+  },
+  {
+    id: 8,
+    name: 'Meera Nair',      roll: '21CS108', branch: 'CSE', year: '3rd Year',
+    email: 'meera.nair@college.edu.in',
+    project: null,
+    skills: {},
+    status: 'pending',
+    lastActive: '2026-08-18T10:00:00Z',
+  },
+];
+
+const MILESTONE_TITLES = [
+  'Proposal & Planning', 'System Design', 'Backend Dev', 'Frontend Dev',
+  'AI/ML Integration', 'Testing & QA', 'Docs & Deployment', 'Final Review',
+];
+
+const STATUS_LABELS = { active: 'Active', review: 'Pending Review', pending: 'Not Started', submitted: 'Submitted' };
+const STATUS_CSS    = { active: 'status-active', review: 'status-review', pending: 'status-pending', submitted: 'status-submitted' };
+const DOMAIN_LABELS = { aiml: 'AI/ML', web: 'Web Dev', iot: 'IoT', ds: 'Data Science', mobile: 'Mobile', cloud: 'Cloud', cyber: 'Cybersecurity', blockchain: 'Blockchain' };
+const AVATAR_COLORS = ['#3b82f6','#8b5cf6','#22c55e','#f59e0b','#ef4444','#06b6d4','#ec4899','#f97316'];
+
+let activeFilter = 'all';
+
+/* ── Load faculty header ── */
+function loadHeader() {
+  const name = currentUser.name || 'Faculty';
+  document.getElementById('facName').textContent   = `Welcome, ${name.split(' ')[0]} 👋`;
+  document.getElementById('facAvatar').textContent = name.charAt(0).toUpperCase();
+  const navAv = document.getElementById('navAvatar');
+  if (navAv) navAv.textContent = name.charAt(0).toUpperCase();
+}
+
+/* ── Stats ── */
+function loadStats() {
+  const total   = STUDENTS.length;
+  const active  = STUDENTS.filter(s => s.status === 'active').length;
+  const pending = STUDENTS.filter(s => s.status === 'review').length;
+  const progArr = STUDENTS.filter(s => s.project).map(s => (s.project.milestonesDone / 8) * 100);
+  const avg     = progArr.length ? Math.round(progArr.reduce((a, b) => a + b, 0) / progArr.length) : 0;
+
+  document.getElementById('statTotal').textContent   = total;
+  document.getElementById('statActive').textContent  = active;
+  document.getElementById('statPending').textContent = pending;
+  document.getElementById('statAvgProg').textContent = avg + '%';
+}
+
+/* ── Student Table ── */
+function filterStudents(status) {
+  activeFilter = status;
+  document.getElementById('filterStatus').value = status;
+  document.getElementById('tableTitle').textContent =
+    status === 'all' ? 'All Students' :
+    status === 'review' ? 'Pending Review' : STATUS_LABELS[status] + ' Students';
+  renderStudentTable();
+}
+
+function renderStudentTable() {
+  const query  = document.getElementById('searchInput').value.trim().toLowerCase();
+  const status = document.getElementById('filterStatus').value;
+  activeFilter = status;
+
+  let filtered = STUDENTS.filter(s => {
+    const projs = s.projects || (s.project ? [s.project] : []);
+    const matchStatus = status === 'all' || s.status === status;
+    const matchQuery  = !query ||
+      s.name.toLowerCase().includes(query) ||
+      s.roll.toLowerCase().includes(query) ||
+      projs.some(p => p.title.toLowerCase().includes(query));
+    return matchStatus && matchQuery;
+  });
+
+  const body = document.getElementById('studentTableBody');
+
+  if (!filtered.length) {
+    body.innerHTML = `<div style="padding:2.5rem;text-align:center;color:var(--text-faint);font-size:.88rem;">No students found.</div>`;
+    return;
+  }
+
+  body.innerHTML = filtered.map((s, i) => {
+    const projs   = s.projects || (s.project ? [s.project] : []);
+    const mainP   = projs[0];
+    const done    = mainP ? mainP.milestonesDone || 0 : 0;
+    const total   = mainP ? (mainP.milestones || []).length || 8 : 8;
+    const pct     = total > 0 ? Math.round((done / total) * 100) : 0;
+    const barColor= pct >= 60 ? 'green' : pct >= 30 ? 'yellow' : 'red';
+    const projName= mainP ? mainP.title : '—';
+    const extraP  = projs.length > 1 ? `<span class="badge badge-yellow" style="font-size:0.6rem; padding: 0.1rem 0.3rem; margin-left: 0.4rem;">+${projs.length - 1} more</span>` : '';
+    const color   = AVATAR_COLORS[i % AVATAR_COLORS.length];
+
+    return `
+      <div class="student-row">
+        <div class="student-name-cell">
+          <div class="s-avatar" style="background:${color}">${s.name.charAt(0)}</div>
+          <div>
+            <div class="s-name">${s.name}</div>
+            <div class="s-roll">${s.roll} · ${s.branch}</div>
+          </div>
+        </div>
+        <div class="s-project">${projName}${extraP}</div>
+        <div class="s-progress-wrap">
+          <div class="progress-bar-wrap"><div class="progress-bar ${barColor}" style="width:${pct}%"></div></div>
+          <div class="s-progress-label"><span>${done}/${total} milestones</span><span>${pct}%</span></div>
+        </div>
+        <div>
+          <span class="status-badge ${STATUS_CSS[s.status]}">${STATUS_LABELS[s.status]}</span>
+          <div style="font-size:0.68rem; color:var(--text-faint); margin-top:4px;">Active: ${fmtRelative(s.lastActive)}</div>
+        </div>
+        <div class="row-actions">
+          <button class="btn btn-secondary btn-sm" onclick="openDrawer(${s.id})" title="View Details">View</button>
+          ${s.status === 'review' ? `<button class="btn btn-primary btn-sm" onclick="approveStudent(${s.id})" title="Approve">✓</button>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ── Activity Feed ── */
+function loadActivityFeed() {
+  const activities = [
+    { color: '#22c55e', text: 'Anjali Singh completed Milestone 6', time: '2h ago' },
+    { color: '#3b82f6', text: 'Rahul Patel submitted progress report', time: '4h ago' },
+    { color: '#f59e0b', text: 'Priya Mehta requested review', time: '1d ago' },
+    { color: '#f59e0b', text: 'Sneha Reddy submitted idea for review', time: '2d ago' },
+    { color: '#8b5cf6', text: 'Dev Malhotra updated project description', time: '2d ago' },
+  ];
+  document.getElementById('activityFeed').innerHTML = activities.map(a => `
+    <div class="activity-item">
+      <div class="activity-dot" style="background:${a.color}"></div>
+      <div><div>${a.text}</div><div style="font-size:.7rem;color:var(--text-faint);margin-top:.15rem;">${a.time}</div></div>
+    </div>
+  `).join('');
+}
+
+/* ── Status Overview ── */
+function loadStatusOverview() {
+  const statuses = [
+    { key: 'active',    label: 'Active',         color: 'var(--green)' },
+    { key: 'review',    label: 'Pending Review', color: 'var(--yellow)' },
+    { key: 'submitted', label: 'Submitted',      color: 'var(--blue)' },
+    { key: 'pending',   label: 'Not Started',    color: 'var(--text-faint)' },
+  ];
+  const total = STUDENTS.length;
+  const el = document.getElementById('statusOverview');
+  el.innerHTML = statuses.map(({ key, label, color }) => {
+    const count = STUDENTS.filter(s => s.status === key).length;
+    const pct   = Math.round((count / total) * 100);
+    return `
+      <div style="margin-bottom:.85rem;">
+        <div style="display:flex;justify-content:space-between;font-size:.8rem;margin-bottom:.35rem;">
+          <span style="color:var(--text-muted)">${label}</span>
+          <span style="color:${color};font-weight:700;font-family:var(--mono)">${count}</span>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" style="width:${pct}%;background:${color}"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ── Student Detail Drawer ── */
+function openDrawer(id) {
+  const s = STUDENTS.find(x => x.id === id);
+  if (!s) return;
+
+  const LEVEL_LABELS = ['', 'Beginner', 'Basic', 'Intermediate', 'Advanced', 'Expert'];
+  const SKILL_NAMES  = {
+    python: '🐍 Python', javascript: '🟨 JavaScript', java: '☕ Java',
+    c_cpp: '⚙️ C/C++', react: '⚛️ React', nodejs: '🟢 Node.js',
+    webdev: '🌐 HTML/CSS', ml: '🤖 Machine Learning', dl: '🧠 Deep Learning',
+    nlp: '💬 NLP/LLMs', cv: '👁️ Computer Vision', ds: '📊 Data Science',
+    dbms: '🗄️ SQL/Databases', mongodb: '🍃 NoSQL/MongoDB',
+    android: '📱 Android', flutter: '💙 Flutter', cloud: '☁️ Cloud/AWS',
+    devops: '🔧 DevOps', iot: '🔌 IoT', cyber: '🔒 Cybersecurity',
+    dsa: '🧩 DSA', os: '🖥️ OS', blockchain: '🔗 Blockchain', git: '🗂️ Git',
+  };
+
+  const skillsHtml = Object.entries(s.skills || {}).map(([k, v]) => `
+    <div class="skill-display-row">
+      <div class="skill-display-name">${SKILL_NAMES[k] || k}</div>
+      <div class="progress-bar-wrap" style="flex:1">
+        <div class="progress-bar" style="width:${(v/5)*100}%"></div>
+      </div>
+      <div style="font-size:.72rem;color:var(--text-faint);min-width:65px;text-align:right;">${LEVEL_LABELS[v]}</div>
+    </div>
+  `).join('') || '<div style="font-size:.84rem;color:var(--text-faint);">No skills rated yet.</div>';
+
+  const projs = s.projects || (s.project ? [s.project] : []);
+  const projectsHtml = projs.length > 0 ? projs.map((p, idx) => {
+    const pDone = p.milestonesDone || 0;
+    const pTotal = (p.milestones || []).length || 8;
+    const pPct = pTotal > 0 ? Math.round((pDone / pTotal) * 100) : 0;
+    
+    const msHtml = MILESTONE_TITLES.slice(0, pDone + 1).map((title, i) => {
+      const done    = i < pDone;
+      const current = i === pDone;
+      const st      = done ? 'done' : current ? 'current' : 'pending';
+      const label   = done ? 'Done' : current ? 'In Progress' : 'Upcoming';
+      return `
+        <div class="mini-ms">
+          <div class="mini-ms-dot ${st}"></div>
+          <div style="flex:1;color:var(--text-muted)">${title}</div>
+          <div style="font-size:.7rem;color:var(--text-faint)">${label}</div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="drawer-section" style="border:1px solid var(--border); border-radius:var(--radius); padding:1rem; margin-bottom:1.5rem; background:var(--bg-card);">
+        <div class="drawer-section-title" style="margin-bottom:0.5rem; font-size:1.05rem;">Project ${idx + 1}: ${p.title}</div>
+        <div style="font-size:.83rem;color:var(--text-muted);margin-bottom:.75rem;">${p.desc}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem;">
+          ${(p.techStack||[]).map(t => `<span class="tech-tag" style="font-family:var(--mono);font-size:.72rem;padding:.2rem .55rem;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text-muted);">${t}</span>`).join('')}
+        </div>
+        <div class="badge badge-green" style="margin-bottom:1rem;">Feasibility: ${p.feasibility}%</div>
+        
+        <div style="font-weight:600; font-size:0.85rem; margin-bottom:0.5rem;">Timeline</div>
+        ${msHtml}
+      </div>
+    `;
+  }).join('') : '<div style="font-size:.84rem;color:var(--text-faint);margin-bottom:1.5rem;">No project submitted yet.</div>';
+
+  const savedFeedback = Store.get(`feedback_${s.id}`) || '';
+
+  document.getElementById('drawerContent').innerHTML = `
+    <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1.25rem;padding-right:2rem;">
+      <div class="faculty-avatar" style="width:50px;height:50px;font-size:1.2rem;background:${AVATAR_COLORS[s.id % AVATAR_COLORS.length]}">${s.name.charAt(0)}</div>
+      <div>
+        <div class="drawer-title">${s.name}</div>
+        <div class="drawer-sub">${s.roll} · ${s.branch} · ${s.year}</div>
+      </div>
+      <span class="status-badge ${STATUS_CSS[s.status]}" style="margin-left:auto">${STATUS_LABELS[s.status]}</span>
+    </div>
+
+    <div style="display:flex;gap:.5rem;margin-bottom:1.25rem;">
+      <button class="btn btn-secondary btn-sm" onclick="showToast('Meeting scheduled with ${s.name}', '📅')" style="flex:1;">📅 Schedule Meeting</button>
+      <button class="btn btn-secondary btn-sm" onclick="showToast('Opening chat with ${s.name}', '✉️')" style="flex:1;">✉️ Message</button>
+    </div>
+
+    <div class="divider"></div>
+
+    ${projectsHtml}
+
+    <div class="drawer-section">
+      <div class="drawer-section-title">⚡ Skills</div>
+      ${skillsHtml}
+    </div>
+
+    <div class="drawer-section">
+      <div class="drawer-section-title">💬 Leave Feedback</div>
+      <textarea class="feedback-area" id="feedbackText" placeholder="Write your feedback or guidance for this student...">${savedFeedback}</textarea>
+      <div style="display:flex;gap:.5rem;margin-top:.6rem;">
+        <button class="btn btn-primary btn-sm btn-full" onclick="saveFeedback(${s.id})">💾 Save Feedback</button>
+        ${s.status === 'review' ? `<button class="btn btn-secondary btn-sm" onclick="approveStudent(${s.id})">✓ Approve</button>` : ''}
+      </div>
+    </div>
+  `;
+
+  document.getElementById('drawerOverlay').classList.add('open');
+}
+
+function closeDrawer() {
+  document.getElementById('drawerOverlay').classList.remove('open');
+}
+
+document.getElementById('drawerOverlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('drawerOverlay')) closeDrawer();
+});
+
+function saveFeedback(id) {
+  const text = document.getElementById('feedbackText').value.trim();
+  Store.set(`feedback_${id}`, text);
+  showToast('Feedback saved!', '💾');
+}
+
+function approveStudent(id) {
+  const s = STUDENTS.find(x => x.id === id);
+  if (s) { s.status = 'active'; }
+  showToast(`${STUDENTS.find(x => x.id === id)?.name}'s submission approved!`, '✅');
+  closeDrawer();
+  renderStudentTable();
+  loadStats();
+}
+
+function exportReport() {
+  const lines = ['Student Report — ProjectGuide-AI\n'];
+  lines.push(`Generated: ${fmtDate()}\n`);
+  lines.push('Name,Roll,Branch,Project,Progress,Status\n');
+  STUDENTS.forEach(s => {
+    const prog = s.project ? `${s.project.milestonesDone}/8` : '0/8';
+    lines.push(`${s.name},${s.roll},${s.branch},"${s.project?.title || 'None'}",${prog},${STATUS_LABELS[s.status]}`);
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'student_report.csv'; a.click();
+  showToast('Report exported as CSV!', '📊');
+}
+
+/* ── Init ── */
+document.addEventListener('DOMContentLoaded', () => {
+  loadHeader();
+  loadStats();
+  renderStudentTable();
+  loadActivityFeed();
+  loadStatusOverview();
+});
+</script>
+</body>
+</html>
