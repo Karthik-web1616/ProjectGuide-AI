@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { Store, fmtDate } from '../utils/store';
 import { showToast } from '../utils/toast';
+import { submitIdeaToBackend } from '../utils/api';
 
 const domainMap = {
   aiml: ['Python', 'TensorFlow', 'PyTorch', 'OpenAI API', 'HuggingFace', 'FastAPI'],
@@ -208,7 +209,7 @@ export default function StudentDashboard() {
     }
     setIsSubmitting(true);
 
-    setTimeout(() => {
+    setTimeout(async () => {
       let techStack = [];
       const d = (ideaDomain || '').toLowerCase();
       if (domainMap[d]) {
@@ -248,12 +249,32 @@ export default function StudentDashboard() {
       Store.set('projects', updatedProjects);
       Store.set('project', updatedProjects[0]); // compatibility
 
+      // Send the idea to the backend — fires the Milestone 1 trigger mechanism
+      const studentId = Store.get('studentId');
+      if (studentId) {
+        try {
+          await submitIdeaToBackend({
+            student_id: studentId,
+            title: proj.title,
+            desc: proj.desc,
+            domain: proj.domain,
+            teamSize: proj.teamSize,
+            durationDays: proj.durationDays
+          });
+        } catch (err) {
+          console.error('Idea submission API call failed:', err);
+          showToast('Saved locally, but backend sync failed. Is the backend running?', '⚠️');
+        }
+      } else {
+        console.warn('No studentId found — complete onboarding (Profile page) first so the backend has a student record.');
+      }
+
       showToast(editingIndex !== null ? 'Project idea updated!' : 'Project idea submitted & roadmap generated!', '🚀');
       closeIdeaModal();
       setIsSubmitting(false);
       loadProjects(profile);
     }, 900);
-  };
+};
 
   const startVoiceRecord = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;

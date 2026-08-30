@@ -4,6 +4,7 @@ import Navbar from '../components/Navbar';
 import { Store } from '../utils/store';
 import { showToast } from '../utils/toast';
 import { SKILLS, LEVEL_LABELS, DOMAINS } from '../utils/constants';
+import { submitOnboarding } from '../utils/api';
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -103,7 +104,7 @@ export default function Profile() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const finalProfile = {
       ...profile,
       name: `${profile.firstName.trim()} ${profile.lastName.trim()}`,
@@ -126,6 +127,28 @@ export default function Profile() {
       email: finalProfile.email,
       rollNo: finalProfile.rollNo
     });
+
+    // Send onboarding data to the backend
+    try {
+      const result = await submitOnboarding({
+        firstName: profile.firstName.trim(),
+        lastName: profile.lastName.trim(),
+        email: profile.email,
+        rollNo: profile.rollNo,
+        branch: profile.branch,
+        year: profile.year,
+        skills,
+        otherSkills: otherSkills.trim(),
+        domains,
+        otherDomains: otherDomains.trim(),
+        aboutMe: aboutMe.trim(),
+        teamSize
+      });
+      Store.set('studentId', result.student_id);
+    } catch (err) {
+      console.error('Onboarding API call failed:', err);
+      showToast('Saved locally, but backend sync failed. Is the backend running?', '⚠️');
+    }
 
     showToast('Profile saved successfully!', '🎉');
     setTimeout(() => {
