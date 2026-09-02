@@ -1,4 +1,0 @@
-chromadb
-onnxruntime
-sentence-transformers
-numpy
