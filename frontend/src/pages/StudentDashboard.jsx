@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { Store, fmtDate } from '../utils/store';
 import { showToast } from '../utils/toast';
-import { submitIdeaToBackend } from '../utils/api';
+import { submitIdeaToBackend, submitOnboarding } from '../utils/api';
 
 const domainMap = {
   aiml: ['Python', 'TensorFlow', 'PyTorch', 'OpenAI API', 'HuggingFace', 'FastAPI'],
@@ -222,6 +222,8 @@ export default function StudentDashboard() {
       const feasibility = Math.floor(Math.random() * 15) + 82; // 82 - 96%
       const newMilestones = generateMilestones(duration);
 
+      const existingProject = editingIndex !== null ? projects[editingIndex] : null;
+
       const proj = {
         title: ideaTitle.trim() || 'AI Guided Academic Project',
         desc: ideaDesc.trim(),
@@ -230,17 +232,62 @@ export default function StudentDashboard() {
         durationDays: duration,
         techStack,
         feasibility,
-        milestonesDone: editingIndex !== null ? (projects[editingIndex].milestonesDone || 0) : 0,
-        submittedAt: new Date().toISOString(),
-        milestones: newMilestones
+        milestonesDone: existingProject ? (existingProject.milestonesDone || 0) : 0,
+        submittedAt: existingProject ? existingProject.submittedAt : new Date().toISOString(),
+        milestones: newMilestones,
+        backendIdeaId: existingProject?.backendIdeaId || null
       };
+
+      // 1. Ensure we have a valid studentId on the backend
+      let studentId = Store.get('studentId');
+      if (!studentId) {
+        try {
+          const user = Store.get('currentUser') || {};
+          const curProf = profile || Store.get('profile') || {};
+          const onboardingRes = await submitOnboarding({
+            firstName: curProf.firstName || user.name?.split(' ')[0] || 'Student',
+            lastName: curProf.lastName || user.name?.split(' ').slice(1).join(' ') || '',
+            email: curProf.email || user.email || 'student@college.edu.in',
+            rollNo: curProf.rollNo || user.rollNo || '21CS101',
+            branch: curProf.branch || 'CSE',
+            year: curProf.year || '3rd Year',
+            skills: curProf.skills || { python: 3, webdev: 3 },
+            domains: curProf.domains || [proj.domain],
+            teamSize: proj.teamSize
+          });
+          studentId = onboardingRes.student_id;
+          Store.set('studentId', studentId);
+        } catch (err) {
+          console.warn('Auto-onboarding during submission failed:', err);
+          studentId = 1; // Fallback
+        }
+      }
+
+      // 2. Send idea to backend
+      try {
+        const result = await submitIdeaToBackend({
+          student_id: studentId || 1,
+          title: proj.title,
+          desc: proj.desc,
+          domain: proj.domain,
+          teamSize: proj.teamSize,
+          durationDays: proj.durationDays,
+          idea_id: proj.backendIdeaId || undefined
+        });
+        if (result && result.idea_id) {
+          proj.backendIdeaId = result.idea_id;
+        }
+        showToast(editingIndex !== null ? 'Project idea updated & synced to backend!' : 'Project idea submitted & synced to backend!', '🚀');
+      } catch (err) {
+        console.error('Idea submission API call failed:', err);
+        showToast(editingIndex !== null ? 'Project idea updated locally! (Backend sync failed)' : 'Project idea submitted locally! (Backend sync failed)', '⚠️');
+      }
 
       let updatedProjects = [...projects];
       if (editingIndex !== null) {
         updatedProjects[editingIndex] = {
           ...updatedProjects[editingIndex],
-          ...proj,
-          submittedAt: updatedProjects[editingIndex].submittedAt || proj.submittedAt
+          ...proj
         };
       } else {
         updatedProjects.push(proj);
@@ -249,32 +296,11 @@ export default function StudentDashboard() {
       Store.set('projects', updatedProjects);
       Store.set('project', updatedProjects[0]); // compatibility
 
-      // Send the idea to the backend — fires the Milestone 1 trigger mechanism
-      const studentId = Store.get('studentId');
-      if (studentId) {
-        try {
-          await submitIdeaToBackend({
-            student_id: studentId,
-            title: proj.title,
-            desc: proj.desc,
-            domain: proj.domain,
-            teamSize: proj.teamSize,
-            durationDays: proj.durationDays
-          });
-        } catch (err) {
-          console.error('Idea submission API call failed:', err);
-          showToast('Saved locally, but backend sync failed. Is the backend running?', '⚠️');
-        }
-      } else {
-        console.warn('No studentId found — complete onboarding (Profile page) first so the backend has a student record.');
-      }
-
-      showToast(editingIndex !== null ? 'Project idea updated!' : 'Project idea submitted & roadmap generated!', '🚀');
       closeIdeaModal();
       setIsSubmitting(false);
       loadProjects(profile);
-    }, 900);
-};
+    }, 400);
+  };
 
   const startVoiceRecord = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;

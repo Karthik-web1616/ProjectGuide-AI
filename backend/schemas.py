@@ -30,6 +30,7 @@ class IdeaRequest(BaseModel):
     domain: Optional[str] = "web"
     teamSize: Optional[str] = "3"
     durationDays: Optional[int] = 30
+    idea_id: Optional[int] = None
 
 
 class IdeaResponse(BaseModel):
