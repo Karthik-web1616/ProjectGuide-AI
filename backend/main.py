@@ -1,16 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-import models
-from database import Base, engine
+from database import check_db_connection
 from routers import onboarding, submission
 
-# Creates students / skill_profiles / project_ideas tables on first run
-Base.metadata.create_all(bind=engine)
+app = FastAPI(title="Agentic Mentoring System - Backend (Milestone 1 - MongoDB)")
 
-app = FastAPI(title="Agentic Mentoring System - Backend (Milestone 1)")
-
-# TODO: tighten allow_origins to the actual frontend URL once deployed
+# CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,3 +21,9 @@ app.include_router(submission.router, tags=["submission"])
 @app.get("/")
 def health_check():
     return {"status": "backend running"}
+
+
+@app.get("/db-health")
+def db_health_check():
+    """Live check for MongoDB Atlas connectivity"""
+    return check_db_connection()

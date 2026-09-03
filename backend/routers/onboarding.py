@@ -1,39 +1,41 @@
-import json
-
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-
-import models
+import datetime
+from fastapi import APIRouter, HTTPException
 import schemas
-from database import get_db
+from database import get_students_collection
 
 router = APIRouter()
 
 
 @router.post("/onboarding", response_model=schemas.OnboardingResponse)
-def create_profile(data: schemas.OnboardingRequest, db: Session = Depends(get_db)):
-    student = models.Student(
-        first_name=data.firstName,
-        last_name=data.lastName,
-        email=data.email,
-        roll_no=data.rollNo,
-        branch=data.branch,
-        year=data.year,
-    )
-    db.add(student)
-    db.commit()
-    db.refresh(student)
+def create_profile(data: schemas.OnboardingRequest):
+    try:
+        students = get_students_collection()
+        student_doc = {
+            "first_name": data.firstName,
+            "last_name": data.lastName,
+            "email": data.email,
+            "roll_no": data.rollNo,
+            "branch": data.branch,
+            "year": data.year,
+            "skills": data.skills,
+            "other_skills": data.otherSkills,
+            "domains": data.domains,
+            "other_domains": data.otherDomains,
+            "about_me": data.aboutMe,
+            "team_size": data.teamSize,
+            "updated_at": datetime.datetime.utcnow(),
+        }
 
-    profile = models.SkillProfile(
-        student_id=student.id,
-        skills=json.dumps(data.skills),
-        other_skills=data.otherSkills,
-        domains=json.dumps(data.domains),
-        other_domains=data.otherDomains,
-        about_me=data.aboutMe,
-        team_size=data.teamSize,
-    )
-    db.add(profile)
-    db.commit()
+        # Check if student with this email already exists; update if so, else insert
+        existing = students.find_one({"email": data.email})
+        if existing:
+            students.update_one({"_id": existing["_id"]}, {"$set": student_doc})
+            student_id = str(existing["_id"])
+        else:
+            student_doc["created_at"] = datetime.datetime.utcnow()
+            result = students.insert_one(student_doc)
+            student_id = str(result.inserted_id)
 
-    return {"student_id": student.id, "status": "onboarded"}
+        return {"student_id": student_id, "status": "onboarded"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")

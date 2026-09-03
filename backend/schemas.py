@@ -1,5 +1,4 @@
-from typing import Dict, List, Optional
-
+from typing import Dict, List, Optional, Union
 from pydantic import BaseModel
 
 
@@ -19,12 +18,12 @@ class OnboardingRequest(BaseModel):
 
 
 class OnboardingResponse(BaseModel):
-    student_id: int
+    student_id: Union[str, int]
     status: str
 
 
 class IdeaRequest(BaseModel):
-    student_id: int
+    student_id: Union[str, int]
     title: str
     desc: str
     domain: Optional[str] = "web"
@@ -33,5 +32,5 @@ class IdeaRequest(BaseModel):
 
 
 class IdeaResponse(BaseModel):
-    idea_id: int
+    idea_id: Union[str, int]
     status: str
