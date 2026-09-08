@@ -39,3 +39,5 @@ build/
 extract-css.cjs
 extract-css.js
 scratch/
+__pycache__/
+*.pyc

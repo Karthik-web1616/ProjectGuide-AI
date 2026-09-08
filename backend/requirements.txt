@@ -4,3 +4,12 @@ pydantic
 pymongo
 dnspython
 python-dotenv
+crewai
+crewai[tools]
+groq
+langchain-groq
+PyPDF2
+python-docx
+Pillow
+litellm
+aiohttp

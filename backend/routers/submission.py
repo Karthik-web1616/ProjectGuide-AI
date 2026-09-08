@@ -17,6 +17,11 @@ def submit_idea(data: schemas.IdeaRequest):
             "domain": data.domain,
             "team_size": data.teamSize,
             "duration_days": data.durationDays,
+            "duration_unit": data.durationUnit,
+            "tech_ideas": data.techIdeas,
+            "ref_link": data.refLink,
+            "features": data.features,
+            "uploaded_files": [f.dict() for f in data.uploadedFiles],
             "status": "pending_review",
             "created_at": datetime.datetime.utcnow(),
         }

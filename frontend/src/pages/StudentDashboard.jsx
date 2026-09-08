@@ -1,30 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
+import FeasibilityReportModal from '../components/FeasibilityReportModal';
 import { Store, fmtDate } from '../utils/store';
 import { showToast } from '../utils/toast';
-import { submitIdeaToBackend } from '../utils/api';
-
-const domainMap = {
-  aiml: ['Python', 'TensorFlow', 'PyTorch', 'OpenAI API', 'HuggingFace', 'FastAPI'],
-  web: ['React', 'Node.js', 'Express', 'MongoDB', 'PostgreSQL', 'TailwindCSS'],
-  mobile: ['Flutter', 'React Native', 'Firebase', 'Swift', 'Kotlin'],
-  ds: ['Python', 'Pandas', 'Scikit-Learn', 'Tableau', 'Jupyter Notebook'],
-  iot: ['C++', 'Arduino', 'Raspberry Pi', 'MQTT', 'Python', 'Node-RED'],
-  cyber: ['Python', 'Kali Linux', 'Wireshark', 'Bash', 'BurpSuite', 'Metasploit'],
-  blockchain: ['Solidity', 'Ethereum', 'Web3.js', 'Hardhat', 'IPFS', 'Ethers.js'],
-  cloud: ['AWS', 'Docker', 'Kubernetes', 'Terraform', 'Go', 'GitHub Actions'],
-  nlp: ['Python', 'LangChain', 'OpenAI API', 'ChromaDB', 'Streamlit'],
-  gamedev: ['Unity', 'C#', 'Unreal Engine', 'C++', 'Godot', 'Blender']
-};
+import { submitIdeaToBackend, fetchFeasibilityReport } from '../utils/api';
 
 export default function StudentDashboard() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [projects, setProjects] = useState([]);
-  const [stats, setStats] = useState({ done: 0, total: 8, pct: 0, feasibility: '—', week: '—', weekLabel: 'Not started' });
+  const [stats, setStats] = useState({ done: 0, total: 0, pct: 0, feasibility: '—', week: '—', weekLabel: 'Not evaluated' });
+  
+  // Modals State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
+
+  // AI Feasibility Agent State (Real CrewAI + Groq)
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [analyzingProjectTitle, setAnalyzingProjectTitle] = useState(null);
   
   // Idea Form State
   const [ideaTitle, setIdeaTitle] = useState('');
@@ -34,9 +30,18 @@ export default function StudentDashboard() {
   const [ideaTeamSize, setIdeaTeamSize] = useState('3');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [ideaTechIdeas, setIdeaTechIdeas] = useState('');
+  const [ideaRefLink, setIdeaRefLink] = useState('');
+  const [ideaFeatures, setIdeaFeatures] = useState([]);
+  const [featureInput, setFeatureInput] = useState('');
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [durationMode, setDurationMode] = useState('weeks'); // 'weeks' or 'days'
+  const fileInputRef = useRef(null);
+
   // Chat State
   const [messages, setMessages] = useState([
-    { role: 'ai', text: 'Hello! I am your AI Project Guide. Ask me anything about your project requirements, architecture, or roadmap!', time: new Date().toISOString() }
+    { role: 'ai', text: 'Hello! I am your AI Project Mentor. Ask me anything about your project feasibility, scope boundaries, tech stack selection, or milestone deliverables!', time: new Date().toISOString() }
   ]);
   const [chatInput, setChatInput] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -69,14 +74,14 @@ export default function StudentDashboard() {
       setIdeaTeamSize(p.teamSize);
     }
 
-    loadProjects(p);
+    loadProjects();
   }, [navigate]);
 
   useEffect(() => {
     chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const loadProjects = (curProfile) => {
+  const loadProjects = () => {
     let projs = Store.get('projects') || [];
     // Migration fallback for single project
     const singleProj = Store.get('project');
@@ -84,47 +89,89 @@ export default function StudentDashboard() {
       projs = [singleProj];
       Store.set('projects', projs);
     }
-
     setProjects(projs);
 
-    if (projs.length > 0) {
-      let tDone = 0;
-      let tTotal = 0;
-      let feasSum = 0;
+    const first = projs[0];
+    const feas = first?.feasibility ? `${first.feasibility}%` : '—';
+    const verdict = first?.feasibilityReport?.verdict || 'Awaiting Review';
 
-      projs.forEach(p => {
-        tDone += (p.milestonesDone || 0);
-        const pMilestones = p.milestones || [];
-        tTotal += pMilestones.length || 8;
-        feasSum += (p.feasibility || 85);
+    setStats({ 
+      done: projs.length, 
+      total: projs.length, 
+      pct: first?.feasibility ? first.feasibility : 0, 
+      feasibility: feas, 
+      week: verdict, 
+      weekLabel: first?.feasibilityReport ? 'AI Verified (CrewAI)' : 'Pending Review' 
+    });
+  };
+
+  const handleCheckFeasibility = async (proj, pIndex = null) => {
+    setAnalyzingProjectTitle(proj.title);
+    try {
+      // Prepare files with base64 content for text extraction
+      const filesRaw = proj.rawFiles || proj.uploadedFiles || [];
+      const filesToSend = [];
+      for (const f of filesRaw) {
+        if (f.dataUrl) {
+          const base64Content = f.dataUrl.split(',')[1] || '';
+          filesToSend.push({
+            name: f.name,
+            contentBase64: base64Content,
+            contentType: f.type,
+          });
+        }
+      }
+
+      const report = await fetchFeasibilityReport({
+        title: proj.title || 'Academic Project',
+        desc: proj.desc || '',
+        domain: (proj.domain || 'web').toLowerCase(),
+        teamSize: String(proj.teamSize || 3),
+        durationDays: parseInt(proj.durationDays) || 30,
+        techIdeas: proj.techIdeas || '',
+        features: proj.features || [],
+        studentSkills: profile?.skills || {},
+        uploadedFiles: filesToSend,
       });
 
-      const avgFeas = Math.round(feasSum / projs.length);
-      const tPct = tTotal === 0 ? 0 : Math.round((tDone / tTotal) * 100);
+      let currentProjs = Store.get('projects') || [...projects];
+      let targetIdx = pIndex;
+      if (targetIdx === null) {
+        targetIdx = currentProjs.findIndex(p => p.title === proj.title);
+      }
 
-      const mainP = projs[0];
-      const currentMilestoneIdx = mainP.milestonesDone || 0;
-      const currentMilestone = (mainP.milestones && mainP.milestones[currentMilestoneIdx]) || null;
-      const curWeek = currentMilestone ? currentMilestone.week : `Week ${Math.min(currentMilestoneIdx + 1, 8)}`;
-      const curTitle = currentMilestone ? currentMilestone.title : (tDone >= tTotal ? 'Project Completed' : 'In Progress');
+      const updatedProj = {
+        ...proj,
+        feasibility: report.overallScore,
+        feasibilityReport: report,
+        status: 'reviewed',
+        submittedAt: proj.submittedAt || new Date().toISOString()
+      };
 
-      setStats({
-        done: tDone,
-        total: tTotal,
-        pct: tPct,
-        feasibility: `${avgFeas}%`,
-        week: curWeek,
-        weekLabel: curTitle
-      });
-    } else {
-      setStats({
-        done: 0,
-        total: 8,
-        pct: 0,
-        feasibility: '—',
-        week: '—',
-        weekLabel: 'Not started'
-      });
+      if (targetIdx !== -1 && targetIdx !== null && currentProjs[targetIdx]) {
+        currentProjs[targetIdx] = {
+          ...currentProjs[targetIdx],
+          ...updatedProj
+        };
+      } else {
+        currentProjs.unshift(updatedProj);
+      }
+
+      Store.set('projects', currentProjs);
+      Store.set('project', currentProjs[0]);
+      setProjects(currentProjs);
+      loadProjects();
+
+      setSelectedReport(report);
+      setSelectedProject(proj);
+      setIsReportModalOpen(true);
+
+      showToast(`AI Feasibility Score: ${report.overallScore}% (${report.verdict})`, '✨');
+    } catch (err) {
+      console.error('Feasibility agent failed:', err);
+      showToast('AI Feasibility agent failed. Backend running?', '❌');
+    } finally {
+      setAnalyzingProjectTitle(null);
     }
   };
 
@@ -152,53 +199,139 @@ export default function StudentDashboard() {
       setIdeaDomain(p.domain || '');
       setIdeaDuration((p.durationDays || 30).toString());
       setIdeaTeamSize(p.teamSize || '3');
+      setIdeaTechIdeas(p.techIdeas || '');
+      setIdeaRefLink(p.refLink || '');
+      setIdeaFeatures(p.features || []);
+      setUploadedFiles(p.uploadedFiles || []);
+      setDurationMode(p.durationUnit || 'weeks');
       setEditingIndex(index);
     } else {
       setIdeaTitle('');
       setIdeaDesc('');
       setIdeaDuration('30');
+      setIdeaTechIdeas('');
+      setIdeaRefLink('');
+      setIdeaFeatures([]);
+      setUploadedFiles([]);
+      setDurationMode('weeks');
       setEditingIndex(null);
     }
+    setFeatureInput('');
     setIsModalOpen(true);
   };
 
   const closeIdeaModal = () => setIsModalOpen(false);
 
-  const generateMilestones = (days) => {
-    const phaseCount = days <= 15 ? 3 : days <= 30 ? 5 : 8;
-    const interval = Math.max(1, Math.floor(days / phaseCount));
-    let ms = [];
-    const baseTitles = [
-      "Requirements, Scope & Feasibility Analysis",
-      "System Architecture, DB Design & Wireframing",
-      "Environment Setup & Core Infrastructure",
-      "Module Development & Core Business Logic",
-      "API Integrations & Third-Party Services",
-      "Unit, Integration & QA Testing",
-      "Deployment, CI/CD & Performance Optimization",
-      "Final Documentation, Presentation & Viva Prep"
-    ];
-    const baseDescs = [
-      "Define project goals, user stories, and technical requirements.",
-      "Design database schema, component hierarchy, and interface flows.",
-      "Initialize repositories, configure frameworks, and set up boilerplate.",
-      "Build primary models, views, and core algorithms.",
-      "Connect backend endpoints, state management, and external APIs.",
-      "Conduct end-to-end testing, bug squashing, and security reviews.",
-      "Deploy live build to cloud hosting and verify production metrics.",
-      "Prepare final project report, slide deck, and live demonstration."
-    ];
-
-    for (let i = 0; i < phaseCount; i++) {
-      let startDay = i * interval + 1;
-      let endDay = (i === phaseCount - 1) ? days : (i + 1) * interval;
-      ms.push({
-        week: days <= 30 ? `Day ${startDay}–${endDay}` : `Week ${i + 1}`,
-        title: baseTitles[i] || `Phase ${i + 1}`,
-        desc: baseDescs[i] || `Complete key deliverables for Phase ${i + 1}`
-      });
+  const handleQuickFillSample = (e) => {
+    const sampleId = e.target.value;
+    if (!sampleId) return;
+    const sample = SAMPLE_PROJECT_IDEAS.find(s => s.id === sampleId);
+    if (sample) {
+      setIdeaTitle(sample.title);
+      setIdeaDesc(sample.desc);
+      setIdeaDomain(sample.domain);
+      setIdeaDuration(sample.durationDays.toString());
+      setIdeaTeamSize(sample.teamSize);
+      showToast('Filled form with sample project idea!', '💡');
     }
-    return ms;
+  };
+
+  // Duration display helper
+  const getDurationDisplay = (daysStr) => {
+    const d = parseInt(daysStr) || 0;
+    if (d <= 0) return null;
+    const weeks = Math.floor(d / 7);
+    const rem = d % 7;
+    if (weeks === 0) return `${d} day${d !== 1 ? 's' : ''}`;
+    if (rem === 0) return `${weeks} week${weeks !== 1 ? 's' : ''}`;
+    return `${weeks} week${weeks !== 1 ? 's' : ''} ${rem} day${rem !== 1 ? 's' : ''}`;
+  };
+
+  // Feature tag helpers
+  const addFeature = () => {
+    const f = featureInput.trim();
+    if (!f || ideaFeatures.includes(f)) return;
+    setIdeaFeatures(prev => [...prev, f]);
+    setFeatureInput('');
+  };
+  const removeFeature = (f) => setIdeaFeatures(prev => prev.filter(x => x !== f));
+
+  // File upload helpers
+  const ACCEPTED_TYPES = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+    'application/zip',
+    'application/x-zip-compressed',
+    'text/plain'
+  ];
+  const MAX_FILE_MB = 10;
+
+  const processFiles = (files) => {
+    Array.from(files).forEach(file => {
+      if (!ACCEPTED_TYPES.includes(file.type) && !file.name.match(/\.(pdf|doc|docx|png|jpg|jpeg|gif|webp|zip|txt)$/i)) {
+        showToast(`Unsupported file: ${file.name}`, '⚠️'); return;
+      }
+      if (file.size > MAX_FILE_MB * 1024 * 1024) {
+        showToast(`${file.name} exceeds ${MAX_FILE_MB}MB limit`, '⚠️'); return;
+      }
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        setUploadedFiles(prev => {
+          if (prev.some(f => f.name === file.name && f.size === file.size)) return prev;
+          return [...prev, {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            dataUrl: file.type.startsWith('image/') ? evt.target.result : null,
+            uploadedAt: new Date().toISOString()
+          }];
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileInput = (e) => processFiles(e.target.files);
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    processFiles(e.dataTransfer.files);
+  };
+
+  const removeFile = (name) => setUploadedFiles(prev => prev.filter(f => f.name !== name));
+
+  const getFileIcon = (file) => {
+    if (file.type === 'application/pdf') return '📄';
+    if (file.type.includes('word')) return '📝';
+    if (file.type.startsWith('image/')) return '🖼️';
+    if (file.type.includes('zip')) return '🗜️';
+    return '📎';
+  };
+
+  const fmtFileSize = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Text formatting helper: wrap selected textarea text
+  const applyFormat = (format) => {
+    const ta = document.getElementById('ideaDescTA');
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const selected = ideaDesc.substring(start, end);
+    let replaced = selected;
+    if (format === 'bold') replaced = `**${selected || 'bold text'}**`;
+    else if (format === 'bullet') replaced = `\n• ${selected || 'feature'}`;
+    else if (format === 'numbered') replaced = `\n1. ${selected || 'step'}`;
+    else if (format === 'code') replaced = `\`${selected || 'code'}\``;
+    const newVal = ideaDesc.substring(0, start) + replaced + ideaDesc.substring(end);
+    setIdeaDesc(newVal);
+    setTimeout(() => { ta.focus(); ta.setSelectionRange(start + replaced.length, start + replaced.length); }, 0);
   };
 
   const submitIdea = (e) => {
@@ -209,72 +342,98 @@ export default function StudentDashboard() {
     }
     setIsSubmitting(true);
 
-    setTimeout(async () => {
-      let techStack = [];
-      const d = (ideaDomain || '').toLowerCase();
-      if (domainMap[d]) {
-        techStack = domainMap[d];
-      } else {
-        techStack = ['React', 'Node.js', 'Express', 'MongoDB', 'PostgreSQL'];
-      }
+    const rawDur = parseInt(ideaDuration) || (durationMode === 'weeks' ? 4 : 30);
+    const duration = durationMode === 'weeks' ? rawDur * 7 : rawDur;
+    const domain = ideaDomain || 'web';
+    const teamSize = ideaTeamSize || '3';
+    const title = ideaTitle.trim() || 'Academic Project';
 
-      const duration = parseInt(ideaDuration) || 30;
-      const feasibility = Math.floor(Math.random() * 15) + 82; // 82 - 96%
-      const newMilestones = generateMilestones(duration);
+    const proj = {
+      title,
+      desc: ideaDesc.trim(),
+      domain,
+      teamSize,
+      durationDays: duration,
+      durationUnit: durationMode,
+      techIdeas: ideaTechIdeas.trim(),
+      refLink: ideaRefLink.trim(),
+      features: ideaFeatures,
+      uploadedFiles: uploadedFiles.map(f => ({ name: f.name, size: f.size, type: f.type, uploadedAt: f.uploadedAt })),
+      status: 'pending_review',
+      submittedAt: new Date().toISOString(),
+    };
 
-      const proj = {
-        title: ideaTitle.trim() || 'AI Guided Academic Project',
-        desc: ideaDesc.trim(),
-        domain: ideaDomain || 'web',
-        teamSize: ideaTeamSize,
-        durationDays: duration,
-        techStack,
-        feasibility,
-        milestonesDone: editingIndex !== null ? (projects[editingIndex].milestonesDone || 0) : 0,
-        submittedAt: new Date().toISOString(),
-        milestones: newMilestones
+    let updatedProjects = [...projects];
+    if (editingIndex !== null) {
+      updatedProjects[editingIndex] = {
+        ...updatedProjects[editingIndex],
+        ...proj,
+        submittedAt: updatedProjects[editingIndex].submittedAt || proj.submittedAt
       };
+    } else {
+      updatedProjects.unshift(proj);
+    }
 
-      let updatedProjects = [...projects];
-      if (editingIndex !== null) {
-        updatedProjects[editingIndex] = {
-          ...updatedProjects[editingIndex],
-          ...proj,
-          submittedAt: updatedProjects[editingIndex].submittedAt || proj.submittedAt
-        };
-      } else {
-        updatedProjects.push(proj);
-      }
+    Store.set('projects', updatedProjects);
+    Store.set('project', updatedProjects[0]);
 
-      Store.set('projects', updatedProjects);
-      Store.set('project', updatedProjects[0]); // compatibility
+    // Send to backend
+    const studentId = Store.get('studentId');
+    if (studentId) {
+      submitIdeaToBackend({
+        student_id: studentId,
+        title: proj.title,
+        desc: proj.desc,
+        domain: proj.domain,
+        teamSize: proj.teamSize,
+        durationDays: proj.durationDays,
+        durationUnit: durationMode,
+        techIdeas: proj.techIdeas,
+        refLink: proj.refLink,
+        features: proj.features,
+        uploadedFiles: proj.uploadedFiles
+      }).catch(err => console.error('Backend submission failed:', err));
+    }
 
-      // Send the idea to the backend — fires the Milestone 1 trigger mechanism
-      const studentId = Store.get('studentId');
-      if (studentId) {
-        try {
-          await submitIdeaToBackend({
-            student_id: studentId,
-            title: proj.title,
-            desc: proj.desc,
-            domain: proj.domain,
-            teamSize: proj.teamSize,
-            durationDays: proj.durationDays
-          });
-        } catch (err) {
-          console.error('Idea submission API call failed:', err);
-          showToast('Saved locally, but backend sync failed. Is the backend running?', '⚠️');
-        }
-      } else {
-        console.warn('No studentId found — complete onboarding (Profile page) first so the backend has a student record.');
-      }
+    setIsSubmitting(false);
+    closeIdeaModal();
+    loadProjects();
+    showToast('Idea submitted! Evaluating with AI Feasibility Agent...', '🚀');
+    handleCheckFeasibility({ ...proj, rawFiles: uploadedFiles }, 0);
+  };
 
-      showToast(editingIndex !== null ? 'Project idea updated!' : 'Project idea submitted & roadmap generated!', '🚀');
-      closeIdeaModal();
-      setIsSubmitting(false);
-      loadProjects(profile);
-    }, 900);
-};
+
+  const handleToggleTask = (projectIndex, milestoneIndex, taskId) => {
+    const updated = [...projects];
+    const targetProj = updated[projectIndex];
+    if (!targetProj || !targetProj.milestones) return;
+
+    const ms = targetProj.milestones[milestoneIndex];
+    if (!ms || !ms.tasks) return;
+
+    ms.tasks = ms.tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t);
+
+    // If all tasks are completed, mark milestone done
+    const allDone = ms.tasks.length > 0 && ms.tasks.every(t => t.completed);
+    if (allDone) {
+      ms.status = 'done';
+    } else if (ms.tasks.some(t => t.completed)) {
+      ms.status = 'in_progress';
+    }
+
+    const doneCount = targetProj.milestones.filter(m => m.status === 'done' || (m.tasks && m.tasks.every(t => t.completed))).length;
+    targetProj.milestonesDone = doneCount;
+
+    if (targetProj.blueprint) {
+      targetProj.blueprint.milestonePlan = targetProj.milestones;
+    }
+
+    Store.set('projects', updated);
+    Store.set('project', updated[0]);
+    setProjects(updated);
+    loadProjects(profile);
+    showToast('Task status updated!', '✓');
+  };
 
   const startVoiceRecord = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -326,25 +485,43 @@ export default function StudentDashboard() {
     setMessages(newMsgs);
     setChatInput('');
 
-    // Generate intelligent AI response based on query
+    // Generate intelligent mentor response leveraging Milestone 2 agent blueprints
     setTimeout(() => {
       const q = userMsg.text.toLowerCase();
       let reply = "I recommend breaking down this task into smaller components and reviewing the milestone deliverables.";
       
-      if (q.includes('stack') || q.includes('technology') || q.includes('database')) {
-        reply = "For your chosen domain, I recommend using a REST/GraphQL API with a relational or document DB (e.g. PostgreSQL or MongoDB) and a component-driven frontend like React.";
+      const currentProj = projects[0];
+
+      if (q.includes('stack') || q.includes('technology') || q.includes('framework')) {
+        if (currentProj?.blueprint?.techStackReport) {
+          const s = currentProj.blueprint.techStackReport.stack;
+          reply = `For your project, our Tech Stack Agent recommends: Frontend: ${s.frontend.name}, Backend: ${s.backend.name}, Database: ${s.database.name}. Why? ${s.backend.reason}`;
+        } else {
+          reply = "For your chosen domain, I recommend using a REST/GraphQL API with a relational or document DB (e.g. PostgreSQL or MongoDB) and a component-driven frontend like React.";
+        }
+      } else if (q.includes('scope') || q.includes('mvp') || q.includes('boundary')) {
+        if (currentProj?.blueprint?.scope) {
+          reply = `Our Scope Definition Agent isolated your core MVP: "${currentProj.blueprint.scope.inScope.slice(0, 2).join('; ')}". Features like multi-cloud scaling have been pushed to Phase 2 to prevent scope creep.`;
+        } else {
+          reply = "Keep your initial scope strictly focused on core CRUD and primary user journeys. Don't add secondary features until your core endpoints pass unit tests.";
+        }
+      } else if (q.includes('risk') || q.includes('problem') || q.includes('delay')) {
+        if (currentProj?.blueprint?.riskReport) {
+          const r = currentProj.blueprint.riskReport[0];
+          reply = `Primary Risk Identified: "${r.title}". AI Mitigation Strategy: ${r.mitigation}`;
+        } else {
+          reply = "The main risk for academic projects is timeline slippage during database and third-party API integration. Freeze your architecture by Week 2.";
+        }
       } else if (q.includes('milestone') || q.includes('timeline') || q.includes('deadline')) {
-        reply = "Your current phase focuses on core functionality. Make sure your data models and environment setup are completely validated before building UI screens.";
-      } else if (q.includes('faculty') || q.includes('review') || q.includes('approval')) {
-        reply = "Your faculty mentor can view your submitted blueprint directly from their dashboard. Make sure to complete the milestone deliverables for quick sign-off!";
-      } else if (q.includes('feasibility') || q.includes('scope')) {
-        reply = "Your project feasibility score is strong! Focus on delivering a solid MVP with clean documentation first.";
+        reply = `You have completed ${stats.done} of ${stats.total} milestones. Check off weekly checklist items on your project card to automatically update your progress!`;
+      } else if (q.includes('feasibility') || q.includes('score')) {
+        reply = `Your project feasibility score is ${stats.feasibility}. This is based on technical complexity, time viability, resource availability, and your verified skill profile!`;
       } else {
-        reply = `That's a great question regarding "${userMsg.text}". I recommend creating a modular service layer and writing unit tests to keep development fast and reliable.`;
+        reply = `Regarding "${userMsg.text}": I recommend checking your project blueprint for the specific phase deliverable and discussing this in your next mentor sync!`;
       }
 
       setMessages(prev => [...prev, { role: 'ai', text: reply, time: new Date().toISOString() }]);
-    }, 900);
+    }, 700);
   };
 
   const scrollToChat = () => {
@@ -406,107 +583,146 @@ export default function StudentDashboard() {
             </div>
 
             <div className="stat-card">
-              <div className="stat-card-label">Milestones Done</div>
-              <div className="stat-card-value">{stats.done}</div>
-              <div className="stat-card-sub">out of {stats.total} total</div>
+              <div className="stat-card-label">Submitted Projects</div>
+              <div className="stat-card-value" style={{ fontSize: '1.4rem' }}>{projects.length}</div>
+              <div className="stat-card-sub">{projects.length > 0 ? 'Active in System' : 'No projects yet'}</div>
             </div>
 
             <div className="stat-card">
-              <div className="stat-card-label">Current Phase</div>
-              <div className="stat-card-value" style={{ fontSize: '1.4rem' }}>{stats.week}</div>
+              <div className="stat-card-label">Latest Evaluation</div>
+              <div className="stat-card-value" style={{ fontSize: '1.15rem', color: stats.feasibility !== '—' ? '#22c55e' : 'var(--text-muted)' }}>{stats.week}</div>
               <div className="stat-card-sub">{stats.weekLabel}</div>
             </div>
 
             <div className="stat-card">
               <div className="stat-card-label">Feasibility Score</div>
               <div className="stat-card-value" style={{ color: 'var(--blue)' }}>{stats.feasibility}</div>
-              <div className="stat-card-sub">AI assessment</div>
+              <div className="stat-card-sub">CrewAI + Groq Agent</div>
             </div>
           </div>
 
           {/* Main Dash Grid */}
-          <div className="dash-grid">
+          <div className="dash-grid" style={{ marginTop: '1.25rem' }}>
 
-            {/* Left Column: Project & Milestones */}
+            {/* Left Column: Projects */}
             <div>
-              <div className="section-label">Your Projects ({projects.length})</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <div className="section-label" style={{ margin: 0 }}>Your Projects ({projects.length})</div>
+                <button className="btn btn-secondary btn-sm" onClick={() => openIdeaModal()}>
+                  + New Idea
+                </button>
+              </div>
 
               {projects.length === 0 ? (
                 <div className="empty-project animate-fade-up delay-2">
                   <div className="empty-project-icon">💡</div>
                   <h3 className="empty-project-title">No Project Submitted Yet</h3>
                   <p className="empty-project-desc">
-                    Submit your rough project idea to get an instant AI-powered feasibility check, recommended tech stack, and a week-by-week milestone roadmap.
+                    Submit your project idea. Our CrewAI Feasibility Agent powered by Groq LLM will evaluate technical viability, timeline, resource availability, and document context.
                   </p>
                   <button className="btn btn-primary" onClick={() => openIdeaModal()}>
                     🚀 Submit Your Idea Now
                   </button>
                 </div>
               ) : (
-                projects.map((proj, pIdx) => {
-                  const milestones = proj.milestones || [];
-                  const doneCount = proj.milestonesDone || 0;
-
-                  return (
-                    <div className="project-card animate-fade-up delay-2" key={pIdx}>
-                      <div className="project-card-top">
-                        <div>
-                          <div className="project-title">{proj.title}</div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-faint)' }}>
-                            Submitted {fmtDate(proj.submittedAt)} · Duration: {proj.durationDays || 30} Days · Team of {proj.teamSize || 3}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                          <span className="badge badge-green">Feasibility: {proj.feasibility}%</span>
-                          <button className="btn btn-secondary btn-sm" onClick={() => openIdeaModal(pIdx)}>
-                            ✏️ Update
-                          </button>
+                projects.map((proj, pIdx) => (
+                  <div className="project-card animate-fade-up delay-2" key={pIdx}>
+                    <div className="project-card-top">
+                      <div>
+                        <div className="project-title">{proj.title}</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-faint)' }}>
+                          Submitted {fmtDate(proj.submittedAt)}
+                          {' · '}
+                          {(() => {
+                            const d = proj.durationDays || 30;
+                            const w = Math.floor(d / 7);
+                            const rem = d % 7;
+                            if (w === 0) return `${d} day${d !== 1 ? 's' : ''}`;
+                            if (rem === 0) return `${w} week${w !== 1 ? 's' : ''}`;
+                            return `${w}w ${rem}d`;
+                          })()} · Team of {proj.teamSize || 1}
                         </div>
                       </div>
-
-                      <p className="project-desc">{proj.desc}</p>
-
-                      <div className="project-tech">
-                        {(proj.techStack || []).map((tech, tIdx) => (
-                          <span className="tech-tag" key={tIdx}>{tech}</span>
-                        ))}
-                      </div>
-
-                      <div className="divider"></div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                        <div className="section-label" style={{ margin: 0 }}>Milestone Roadmap</div>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                          {doneCount} of {milestones.length} completed
-                        </span>
-                      </div>
-
-                      <div className="milestone-list">
-                        {milestones.map((ms, mIdx) => {
-                          const isDone = mIdx < doneCount;
-                          const isCurrent = mIdx === doneCount;
-                          const dotClass = isDone ? 'done' : isCurrent ? 'current' : 'pending';
-                          const statusText = isDone ? 'Done' : isCurrent ? 'In Progress' : 'Upcoming';
-                          const statusBadgeClass = isDone ? 'done' : isCurrent ? 'current' : 'pending';
-
-                          return (
-                            <div className="milestone-item" key={mIdx}>
-                              <div className={`ms-dot ${dotClass}`}>
-                                {isDone ? '✓' : isCurrent ? (mIdx + 1) : (mIdx + 1)}
-                              </div>
-                              <div className="ms-body">
-                                <div className="ms-week">{ms.week}</div>
-                                <div className="ms-title">{ms.title}</div>
-                                <div className="ms-desc">{ms.desc}</div>
-                              </div>
-                              <div className={`ms-status ${statusBadgeClass}`}>{statusText}</div>
-                            </div>
-                          );
-                        })}
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        {proj.feasibility ? (
+                          <span className="badge" style={{ background: 'rgba(34,197,94,0.15)', color: '#16a34a', border: '1px solid rgba(34,197,94,0.3)' }}>
+                            🎯 Feasibility: {proj.feasibility}% · {proj.feasibilityReport?.verdict || 'Feasible'}
+                          </span>
+                        ) : (
+                          <span className="badge" style={{ background: 'rgba(251,191,36,0.15)', color: '#f59e0b', border: '1px solid rgba(251,191,36,0.3)' }}>
+                            ⏳ Pending AI Review
+                          </span>
+                        )}
+                        <button className="btn btn-secondary btn-sm" onClick={() => openIdeaModal(pIdx)} title="Edit project">
+                          ✏️
+                        </button>
                       </div>
                     </div>
-                  );
-                })
+
+                    <p className="project-desc">{proj.desc}</p>
+
+                    {/* Feature Tags */}
+                    {proj.features && proj.features.length > 0 && (
+                      <div className="feature-tags" style={{ marginBottom: '0.5rem' }}>
+                        {proj.features.map((f, fi) => (
+                          <span className="feature-tag" key={fi}>{f}</span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Domain / team info row */}
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                      {proj.domain && <span className="tech-tag">{proj.domain.toUpperCase()}</span>}
+                      {proj.techIdeas && <span className="tech-tag">💡 {proj.techIdeas.slice(0, 40)}{proj.techIdeas.length > 40 ? '…' : ''}</span>}
+                    </div>
+
+                    {/* Uploaded files */}
+                    {proj.uploadedFiles && proj.uploadedFiles.length > 0 && (
+                      <div className="proj-uploads-row" style={{ marginTop: '0.5rem' }}>
+                        {proj.uploadedFiles.map((f, fi) => (
+                          <span className="proj-upload-badge" key={fi}>📎 {f.name}</span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Action buttons for AI Feasibility Report */}
+                    {proj.feasibilityReport ? (
+                      <div style={{ display: 'flex', gap: '0.6rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                        <button 
+                          type="button" 
+                          className="btn btn-primary btn-sm" 
+                          onClick={() => { setSelectedReport(proj.feasibilityReport); setSelectedProject(proj); setIsReportModalOpen(true); }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          📊 View AI Feasibility Report
+                        </button>
+                        <button 
+                          type="button" 
+                          className="btn btn-secondary btn-sm" 
+                          onClick={() => handleCheckFeasibility(proj, pIdx)}
+                          disabled={analyzingProjectTitle === proj.title}
+                        >
+                          {analyzingProjectTitle === proj.title ? '⏳ Analyzing with AI...' : '🔄 Re-run AI Check'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: '1rem', display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button 
+                          type="button" 
+                          className="btn btn-primary btn-sm" 
+                          onClick={() => handleCheckFeasibility(proj, pIdx)}
+                          disabled={analyzingProjectTitle === proj.title}
+                          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          {analyzingProjectTitle === proj.title ? '⏳ CrewAI Evaluating with Groq...' : '🤖 Run AI Feasibility Check (CrewAI)'}
+                        </button>
+                        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                          Live evaluation using Groq LLM &amp; document analysis
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))
               )}
             </div>
 
@@ -520,11 +736,11 @@ export default function StudentDashboard() {
                 </button>
                 <Link to="/profile" className="quick-action-btn">
                   <span className="quick-action-icon">👤</span>
-                  <span>Update My Profile &amp; Skills</span>
+                  <span>Update Profile &amp; Skills</span>
                 </Link>
                 <button className="quick-action-btn" onClick={scrollToChat}>
                   <span className="quick-action-icon">🤖</span>
-                  <span>Chat with AI Guide</span>
+                  <span>Consult AI Project Mentor</span>
                 </button>
               </div>
 
@@ -533,8 +749,8 @@ export default function StudentDashboard() {
                 <div className="chat-header">
                   <div className="chat-ai-avatar">🤖</div>
                   <div style={{ flex: 1 }}>
-                    <div className="chat-ai-name">ProjectGuide AI</div>
-                    <div className="chat-ai-sub">● Online · Mentor</div>
+                    <div className="chat-ai-name">ProjectMentor AI</div>
+                    <div className="chat-ai-sub">● Online · Conversational Guide</div>
                   </div>
                   <div className="chat-online"></div>
                 </div>
@@ -571,7 +787,7 @@ export default function StudentDashboard() {
                     className="chat-input" 
                     id="chatInput" 
                     type="text" 
-                    placeholder={isListening ? '🎙️ Listening to your voice...' : 'Ask your mentor anything...'} 
+                    placeholder={isListening ? '🎙️ Listening to your voice...' : 'Ask about feasibility, stack reasoning, scope...'} 
                     value={chatInput} 
                     onChange={e => setChatInput(e.target.value)} 
                   />
@@ -589,16 +805,20 @@ export default function StudentDashboard() {
         className={`modal-overlay ${isModalOpen ? 'open' : ''}`} 
         onClick={(e) => { if (e.target === e.currentTarget) closeIdeaModal(); }}
       >
-        <div className="modal animate-fade-up">
+        <div className="modal animate-fade-up submission-modal" style={{ maxWidth: '680px' }}>
           <button className="modal-close" onClick={closeIdeaModal}>×</button>
           <h2 className="modal-title">
             {editingIndex !== null ? '✏️ Update Project Idea' : '💡 Submit Your Project Idea'}
           </h2>
           <p className="modal-sub">
-            Describe your idea. The AI mentor will analyze feasibility and generate a personalized milestone roadmap.
+            Describe your idea in 2-3 lines. Upload supporting files, define key features, and set duration — our AI agents will build your full blueprint.
           </p>
 
           <form className="auth-form" onSubmit={submitIdea}>
+
+            {/* ── Section 1: Basic Info ── */}
+            <div className="submit-section-label">📋 Project Details</div>
+
             <div className="form-group">
               <label className="form-label">Project Title</label>
               <input 
@@ -610,54 +830,51 @@ export default function StudentDashboard() {
               />
             </div>
 
+            {/* Description with formatting toolbar */}
             <div className="form-group">
-              <label className="form-label">Project Description <span style={{ color: 'var(--red)' }}>*</span></label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                <label className="form-label" style={{ margin: 0 }}>Project Description <span style={{ color: 'var(--red)' }}>*</span></label>
+                <div className="fmt-toolbar">
+                  <button type="button" className="fmt-btn" title="Bold" onClick={() => applyFormat('bold')}><b>B</b></button>
+                  <button type="button" className="fmt-btn" title="Bullet list" onClick={() => applyFormat('bullet')}>• List</button>
+                  <button type="button" className="fmt-btn" title="Numbered list" onClick={() => applyFormat('numbered')}>1. Step</button>
+                  <button type="button" className="fmt-btn" title="Inline code" onClick={() => applyFormat('code')}>&lt;/&gt;</button>
+                </div>
+              </div>
               <textarea 
+                id="ideaDescTA"
                 className="form-textarea" 
                 rows="4" 
-                maxLength="500"
-                placeholder="Describe what you want to build, the problem it solves, and any initial thoughts on the technology..."
+                maxLength="800"
+                placeholder="Describe what you want to build, the core problem it addresses, and any initial thoughts on technologies..."
                 value={ideaDesc} 
                 onChange={e => setIdeaDesc(e.target.value)} 
                 required 
               />
-              <div className="char-counter">{ideaDesc.length}/500</div>
+              <div className="char-counter">{ideaDesc.length}/800</div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Project Domain</label>
-              <select 
-                className="form-select" 
-                value={ideaDomain} 
-                onChange={e => setIdeaDomain(e.target.value)}
-              >
-                <option value="">Let AI decide from description</option>
-                <option value="aiml">AI / Machine Learning</option>
-                <option value="web">Web Development</option>
-                <option value="mobile">Mobile App (Android / iOS)</option>
-                <option value="iot">IoT / Embedded Systems</option>
-                <option value="ds">Data Science / Analytics</option>
-                <option value="cloud">Cloud / DevOps</option>
-                <option value="cyber">Cybersecurity</option>
-                <option value="blockchain">Blockchain / Web3</option>
-                <option value="nlp">NLP / Chatbot / LLM</option>
-                <option value="gamedev">Game Development</option>
-              </select>
-            </div>
-
+            {/* Domain & Team */}
             <div className="grid-2">
               <div className="form-group">
-                <label className="form-label">Estimated Duration (Days) <span style={{ color: 'var(--red)' }}>*</span></label>
-                <input 
-                  className="form-input" 
-                  type="number" 
-                  min="7" 
-                  max="180" 
-                  placeholder="e.g. 30"
-                  value={ideaDuration} 
-                  onChange={e => setIdeaDuration(e.target.value)} 
-                  required 
-                />
+                <label className="form-label">Project Domain / Track</label>
+                <select 
+                  className="form-select" 
+                  value={ideaDomain} 
+                  onChange={e => setIdeaDomain(e.target.value)}
+                >
+                  <option value="">Let AI decide from description</option>
+                  <option value="aiml">🤖 AI / Machine Learning / Vision</option>
+                  <option value="web">🌐 Full-Stack Web Development</option>
+                  <option value="mobile">📱 Mobile App (Flutter / React Native)</option>
+                  <option value="iot">🌱 IoT / Embedded Systems</option>
+                  <option value="ds">📊 Data Science & Predictive Analytics</option>
+                  <option value="cloud">☁️ Cloud Computing & DevOps</option>
+                  <option value="cyber">🛡️ Cybersecurity & Network Defense</option>
+                  <option value="blockchain">🔗 Blockchain & Decentralized Apps</option>
+                  <option value="nlp">💬 NLP / LLMs / Conversational AI</option>
+                  <option value="gamedev">🎮 Game Development</option>
+                </select>
               </div>
               <div className="form-group">
                 <label className="form-label">Team Size</label>
@@ -666,26 +883,229 @@ export default function StudentDashboard() {
                   value={ideaTeamSize} 
                   onChange={e => setIdeaTeamSize(e.target.value)}
                 >
-                  <option value="1">Solo (just me)</option>
-                  <option value="2">2 members</option>
-                  <option value="3">3 members</option>
-                  <option value="4">4 members</option>
-                  <option value="5">5 members</option>
+                  <option value="1">👤 Solo (just me)</option>
+                  <option value="2">👥 2 members</option>
+                  <option value="3">👥 3 members</option>
+                  <option value="4">👥 4 members</option>
+                  <option value="5">👥 5 members</option>
                 </select>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+            {/* Duration with Weeks/Days Toggle Picker */}
+            <div className="form-group">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <label className="form-label" style={{ margin: 0 }}>Project Duration <span style={{ color: 'var(--red)' }}>*</span></label>
+                {/* Mode toggle pill */}
+                <div style={{ display: 'flex', background: 'var(--surface2)', borderRadius: '20px', padding: '3px', border: '1px solid var(--border)', gap: '2px' }}>
+                  {['weeks', 'days'].map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        // Convert value when switching modes
+                        const cur = parseInt(ideaDuration) || 1;
+                        if (mode === 'weeks' && durationMode === 'days') setIdeaDuration(Math.max(1, Math.round(cur / 7)).toString());
+                        if (mode === 'days' && durationMode === 'weeks') setIdeaDuration((cur * 7).toString());
+                        setDurationMode(mode);
+                      }}
+                      style={{
+                        padding: '4px 14px', borderRadius: '16px', border: 'none', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600,
+                        background: durationMode === mode ? 'var(--primary)' : 'transparent',
+                        color: durationMode === mode ? '#fff' : 'var(--text-muted)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Slider + number input row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <input
+                  type="range"
+                  min={durationMode === 'weeks' ? '1' : '1'}
+                  max={durationMode === 'weeks' ? '52' : '365'}
+                  value={ideaDuration}
+                  onChange={e => setIdeaDuration(e.target.value)}
+                  style={{ flex: 1, accentColor: 'var(--primary)', height: '6px', cursor: 'pointer' }}
+                />
+                <div style={{ position: 'relative', minWidth: '90px' }}>
+                  <input
+                    className="form-input"
+                    type="number"
+                    min="1"
+                    max={durationMode === 'weeks' ? '52' : '365'}
+                    value={ideaDuration}
+                    onChange={e => setIdeaDuration(e.target.value)}
+                    required
+                    style={{ textAlign: 'center', paddingRight: '2.8rem' }}
+                  />
+                  <span style={{ position: 'absolute', right: '0.6rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: 'var(--text-muted)', pointerEvents: 'none' }}>
+                    {durationMode === 'weeks' ? 'wk' : 'd'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick preset chips */}
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.55rem' }}>
+                {(durationMode === 'weeks'
+                  ? [{ label: '2 wk', val: '2' }, { label: '4 wk', val: '4' }, { label: '6 wk', val: '6' }, { label: '8 wk', val: '8' }, { label: '12 wk', val: '12' }]
+                  : [{ label: '7 d', val: '7' }, { label: '14 d', val: '14' }, { label: '30 d', val: '30' }, { label: '60 d', val: '60' }, { label: '90 d', val: '90' }]
+                ).map(({ label, val }) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setIdeaDuration(val)}
+                    style={{
+                      padding: '3px 10px', borderRadius: '12px', border: `1px solid ${ideaDuration === val ? 'var(--primary)' : 'var(--border)'}`,
+                      background: ideaDuration === val ? 'var(--primary-dim, rgba(99,102,241,.15))' : 'transparent',
+                      color: ideaDuration === val ? 'var(--primary)' : 'var(--text-muted)',
+                      fontSize: '0.74rem', cursor: 'pointer', fontWeight: ideaDuration === val ? 700 : 400, transition: 'all 0.15s'
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Live human-readable summary + AI milestone hint */}
+              {(() => {
+                const raw = parseInt(ideaDuration) || 0;
+                if (raw <= 0) return null;
+                const totalDays = durationMode === 'weeks' ? raw * 7 : raw;
+                const weeks = Math.floor(totalDays / 7);
+                const remDays = totalDays % 7;
+                const readable = weeks > 0
+                  ? `${weeks} week${weeks !== 1 ? 's' : ''}${remDays > 0 ? ` ${remDays} day${remDays !== 1 ? 's' : ''}` : ''}`
+                  : `${totalDays} day${totalDays !== 1 ? 's' : ''}`;
+                return (
+                  <div className="duration-breakdown">
+                    <span>🗓️ <strong>{readable}</strong> total · AI will generate <strong>{Math.max(1, weeks)}</strong> milestone phase{weeks !== 1 ? 's' : ''}</span>
+                    {totalDays < 14 && <span className="dur-warn">⚠️ Very short — consider at least 2 weeks for a viable submission</span>}
+                    {totalDays > 120 && <span className="dur-info">ℹ️ Long-form — AI will generate up to 10 milestone phases</span>}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* ── Section 2: Additional Info ── */}
+            <div className="submit-section-label" style={{ marginTop: '0.5rem' }}>🔧 Technical Details (Optional)</div>
+
+            <div className="form-group">
+              <label className="form-label">Tech Ideas / Preferred Stack</label>
+              <input 
+                className="form-input" 
+                type="text"
+                placeholder="e.g. React, FastAPI, MongoDB, TensorFlow — your initial tech thoughts"
+                value={ideaTechIdeas}
+                onChange={e => setIdeaTechIdeas(e.target.value)}
+              />
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-faint)', marginTop: '0.3rem' }}>The AI will validate and recommend alternatives if needed.</div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Reference / Inspiration Link</label>
+              <input 
+                className="form-input" 
+                type="url"
+                placeholder="https://github.com/... or https://arxiv.org/..."
+                value={ideaRefLink}
+                onChange={e => setIdeaRefLink(e.target.value)}
+              />
+            </div>
+
+            {/* Key Features Tag Builder */}
+            <div className="form-group">
+              <label className="form-label">Key Features / User Stories</label>
+              <div className="feature-tag-input-row">
+                <input 
+                  className="form-input"
+                  type="text"
+                  placeholder="Type a feature and press Enter or Add..."
+                  value={featureInput}
+                  onChange={e => setFeatureInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addFeature(); } }}
+                  style={{ flex: 1 }}
+                />
+                <button type="button" className="btn btn-secondary btn-sm" onClick={addFeature} style={{ whiteSpace: 'nowrap' }}>
+                  + Add
+                </button>
+              </div>
+              {ideaFeatures.length > 0 && (
+                <div className="feature-tags">
+                  {ideaFeatures.map((f, i) => (
+                    <span className="feature-tag" key={i}>
+                      {f}
+                      <button type="button" className="feature-tag-remove" onClick={() => removeFeature(f)}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Section 3: File Upload ── */}
+            <div className="submit-section-label" style={{ marginTop: '0.5rem' }}>📁 Supporting Documents</div>
+
+            <div 
+              className={`file-drop-zone ${isDragging ? 'dragging' : ''}`}
+              onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <div className="file-drop-icon">📂</div>
+              <div className="file-drop-title">Drop files here or <span className="file-drop-link">browse</span></div>
+              <div className="file-drop-sub">PDF · DOCX · PNG · JPG · ZIP · TXT — max {MAX_FILE_MB}MB each</div>
+              <input 
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp,.zip,.txt"
+                style={{ display: 'none' }}
+                onChange={handleFileInput}
+              />
+            </div>
+
+            {uploadedFiles.length > 0 && (
+              <div className="uploaded-files-list">
+                {uploadedFiles.map((f, i) => (
+                  <div className="uploaded-file-item" key={i}>
+                    <span className="uf-icon">{getFileIcon(f)}</span>
+                    <div className="uf-info">
+                      <div className="uf-name">{f.name}</div>
+                      <div className="uf-size">{fmtFileSize(f.size)}</div>
+                    </div>
+                    {f.dataUrl && (
+                      <img src={f.dataUrl} alt={f.name} className="uf-preview" />
+                    )}
+                    <button type="button" className="uf-remove" onClick={() => removeFile(f.name)} title="Remove file">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
               <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={closeIdeaModal}>
                 Cancel
               </button>
               <button type="submit" className="btn btn-primary" style={{ flex: 1.5 }} disabled={isSubmitting}>
-                {isSubmitting ? '⏳ Analyzing & Generating...' : (editingIndex !== null ? '💾 Save Updates' : '🚀 Submit for AI Review')}
+                {isSubmitting ? '⏳ Submitting...' : '🚀 Submit Idea'}
               </button>
             </div>
           </form>
         </div>
       </div>
+
+      {/* Real AI Feasibility Report Modal */}
+      <FeasibilityReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        report={selectedReport}
+        project={selectedProject}
+      />
     </>
   );
 }

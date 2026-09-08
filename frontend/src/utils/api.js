@@ -20,3 +20,7 @@ export function submitOnboarding(payload) {
 export function submitIdeaToBackend(payload) {
   return postJSON('/submit-idea', payload);
 }
+
+export async function fetchFeasibilityReport(payload) {
+  return postJSON('/api/feasibility-check', payload);
+}

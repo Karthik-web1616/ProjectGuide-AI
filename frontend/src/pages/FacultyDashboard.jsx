@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
+import FeasibilityReportModal from '../components/FeasibilityReportModal';
 import { Store, fmtRelative } from '../utils/store';
 import { showToast } from '../utils/toast';
 import { SKILLS, LEVEL_LABELS } from '../utils/constants';
+import { fetchFeasibilityReport } from '../utils/api';
 
 const STUDENTS_MOCK = [
   {
@@ -193,7 +195,10 @@ export default function FacultyDashboard() {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [feedback, setFeedback] = useState('');
-  const [announcement, setAnnouncement] = useState('');
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
 
   useEffect(() => {
     const currentUser = Store.get('currentUser');
@@ -679,6 +684,45 @@ export default function FacultyDashboard() {
                             </div>
                           );
                         })}
+
+                        <button 
+                          type="button"
+                          className="btn btn-primary btn-sm btn-full"
+                          style={{ marginTop: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                          disabled={isEvaluating}
+                          onClick={async () => {
+                            if (p.feasibilityReport) {
+                              setSelectedReport(p.feasibilityReport);
+                              setSelectedProject(p);
+                              setIsReportModalOpen(true);
+                            } else {
+                              setIsEvaluating(true);
+                              try {
+                                const report = await fetchFeasibilityReport({
+                                  title: p.title || 'Student Project',
+                                  desc: p.desc || '',
+                                  domain: (p.domain || 'web').toLowerCase(),
+                                  teamSize: String(p.teamSize || 3),
+                                  durationDays: parseInt(p.durationDays) || 30,
+                                  techIdeas: (p.techStack || []).join(', '),
+                                  studentSkills: s?.skills || {},
+                                  uploadedFiles: []
+                                });
+                                p.feasibilityReport = report;
+                                setSelectedReport(report);
+                                setSelectedProject(p);
+                                setIsReportModalOpen(true);
+                              } catch (err) {
+                                console.error('Failed to fetch feasibility report:', err);
+                                showToast('AI Feasibility report generation failed', '❌');
+                              } finally {
+                                setIsEvaluating(false);
+                              }
+                            }
+                          }}
+                        >
+                          {isEvaluating ? '⏳ CrewAI Agent Evaluating...' : '📊 View AI Feasibility Report'}
+                        </button>
                       </div>
                     ))
                   ) : (
@@ -741,6 +785,14 @@ export default function FacultyDashboard() {
           })()}
         </div>
       </div>
+
+      {/* Faculty AI Feasibility Report Modal */}
+      <FeasibilityReportModal 
+        isOpen={isReportModalOpen}
+        report={selectedReport}
+        project={selectedProject}
+        onClose={() => setIsReportModalOpen(false)}
+      />
     </>
   );
 }
