@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from pymongo import MongoClient
+from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 
 # Load environment variables from .env
@@ -12,12 +12,44 @@ DB_NAME = os.getenv("DB_NAME", "ai_mentor_platform")
 client = None
 db = None
 
+
 def get_database():
     global client, db
     if db is None:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         db = client[DB_NAME]
+        _ensure_indexes(db)
     return db
+
+
+def _ensure_indexes(database):
+    """
+    Create necessary MongoDB indexes on first connection.
+    All index creations are idempotent (MongoDB ignores duplicates).
+    """
+    # students: unique index on email to prevent duplicate registrations
+    database["students"].create_index(
+        [("email", ASCENDING)],
+        unique=True,
+        name="students_email_unique",
+    )
+
+    # project_ideas: index on student_id for fast per-student queries
+    database["project_ideas"].create_index(
+        [("student_id", ASCENDING)],
+        name="ideas_student_id_idx",
+    )
+
+    # feasibility_reports: index on idea_id (1-to-1 per idea) and student_id
+    database["feasibility_reports"].create_index(
+        [("idea_id", ASCENDING)],
+        name="reports_idea_id_idx",
+    )
+    database["feasibility_reports"].create_index(
+        [("student_id", ASCENDING)],
+        name="reports_student_id_idx",
+    )
+
 
 def check_db_connection():
     """Utility to test whether the MongoDB connection is alive."""
@@ -31,9 +63,18 @@ def check_db_connection():
     except Exception as e:
         return {"connected": False, "database": DB_NAME, "error": str(e), "message": "Unexpected error connecting to MongoDB"}
 
-# Collections helper getters
+
+# ---------------------------------------------------------------------------
+# Collection helper getters
+# ---------------------------------------------------------------------------
+
 def get_students_collection():
     return get_database()["students"]
 
+
 def get_project_ideas_collection():
     return get_database()["project_ideas"]
+
+
+def get_feasibility_reports_collection():
+    return get_database()["feasibility_reports"]

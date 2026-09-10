@@ -2,6 +2,7 @@ import datetime
 from fastapi import APIRouter, HTTPException
 import schemas
 from database import get_project_ideas_collection
+from models import make_project_idea_doc
 
 router = APIRouter()
 
@@ -10,21 +11,7 @@ router = APIRouter()
 def submit_idea(data: schemas.IdeaRequest):
     try:
         ideas = get_project_ideas_collection()
-        idea_doc = {
-            "student_id": str(data.student_id),
-            "title": data.title,
-            "desc": data.desc,
-            "domain": data.domain,
-            "team_size": data.teamSize,
-            "duration_days": data.durationDays,
-            "duration_unit": data.durationUnit,
-            "tech_ideas": data.techIdeas,
-            "ref_link": data.refLink,
-            "features": data.features,
-            "uploaded_files": [f.dict() for f in data.uploadedFiles],
-            "status": "pending_review",
-            "created_at": datetime.datetime.utcnow(),
-        }
+        idea_doc = make_project_idea_doc(data)
 
         result = ideas.insert_one(idea_doc)
         idea_id = str(result.inserted_id)
