@@ -7,7 +7,7 @@ from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://<username>:<password>@cluster0.mongodb.net/?retryWrites=true&w=majority")
-DB_NAME = os.getenv("DB_NAME", "ai_mentor_platform")
+DB_NAME = os.getenv("DB_NAME", "ProjectGuide-AI")
 
 client = None
 db = None
