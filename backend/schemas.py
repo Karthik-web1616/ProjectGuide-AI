@@ -81,3 +81,26 @@ class FeasibilityResponse(BaseModel):
     bottlenecks: List[str]
     filesAnalyzed: Optional[List[str]] = []
     aiGenerated: Optional[bool] = False
+
+class ScopeRequest(BaseModel):
+    title: str
+    desc: str
+    domain: Optional[str] = "web"
+    teamSize: Optional[str] = "3"
+    durationDays: Optional[int] = 30
+    techIdeas: Optional[str] = ""
+    features: Optional[List[str]] = []
+    studentSkills: Optional[Dict[str, int]] = {}
+    uploadedFiles: Optional[List[FileUpload]] = []
+
+
+class ScopeResponse(BaseModel):
+    problemStatement: str
+    objectives: List[str]
+    inScope: List[str]
+    outOfScope: List[str]
+    targetUsers: str
+    keyDeliverables: List[str]
+    assumptions: List[str]
+    constraints: List[str]
+    aiGenerated: Optional[bool] = False
