@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import check_db_connection
-from routers import onboarding, submission, feasibility
+from routers import onboarding, submission, feasibility, scope
 
 app = FastAPI(title="Agentic Mentoring System - Backend (Milestone 1 - MongoDB)")
 
@@ -17,6 +17,7 @@ app.add_middleware(
 app.include_router(onboarding.router, tags=["onboarding"])
 app.include_router(submission.router, tags=["submission"])
 app.include_router(feasibility.router, tags=["agents"])
+app.include_router(scope.router, tags=["agents"])
 
 
 @app.get("/")
