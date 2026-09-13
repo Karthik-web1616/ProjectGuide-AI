@@ -31,6 +31,8 @@ class UploadedFile(BaseModel):
 
 class IdeaRequest(BaseModel):
     student_id: Union[str, int]
+    student_email: Optional[str] = ""
+    user_email: Optional[str] = ""
     title: str
     desc: str
     domain: Optional[str] = "web"
@@ -46,6 +48,7 @@ class IdeaRequest(BaseModel):
 class IdeaResponse(BaseModel):
     idea_id: Union[str, int]
     status: str
+    idea: Optional[Dict[str, Union[str, int, float, bool, list, dict, None]]] = None
 
 
 class FileUpload(BaseModel):
@@ -55,6 +58,8 @@ class FileUpload(BaseModel):
 
 
 class FeasibilityRequest(BaseModel):
+    idea_id: Optional[str] = ""
+    student_email: Optional[str] = ""
     title: str
     desc: str
     domain: Optional[str] = "web"
@@ -83,6 +88,8 @@ class FeasibilityResponse(BaseModel):
     aiGenerated: Optional[bool] = False
 
 class ScopeRequest(BaseModel):
+    idea_id: Optional[str] = ""
+    student_email: Optional[str] = ""
     title: str
     desc: str
     domain: Optional[str] = "web"

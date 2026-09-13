@@ -1,13 +1,29 @@
 """
-CrewAI Feasibility Agent
-Uses Groq LLM (Llama 3.3 70B) to analyze student project ideas
+CrewAI Feasibility Agent  (v2 — improved)
+Uses Groq LLM (configurable model) to analyze student project ideas
 and produce structured feasibility reports.
+
+Key improvements over v1:
+  - Per-domain skill-match scoring using student skills vs. domain requirements.
+  - Richer heuristic scoring (5 tiers per dimension vs. 3).
+  - Verdict thresholds now match the AI prompt (≥85 → Highly Feasible,
+    ≥70 → Feasible with Guidance) — v1 used 88/78 which contradicted
+    the prompt instructions.
+  - Recommended tech stack injected per domain to help the LLM give
+    better, more contextual guidance.
+  - Structured JSON validation with clamp + type-coercion so a partially
+    valid LLM response is never silently dropped.
+  - Confidence flag (`aiGenerated`) now correctly reflects whether the
+    LLM or the heuristic path produced the report.
+  - _build_fallback_report accepts student_skills for skill-aware
+    fallback scoring.
 """
 
 import json
 import os
 import re
 import traceback
+from typing import Optional
 
 from crewai import Agent, Crew, Task
 from dotenv import load_dotenv
@@ -17,8 +33,11 @@ from agents.file_extractor import extract_text_from_files
 load_dotenv()
 
 
-# Patch CrewAI's prompt-caching marker for Groq compatibility
-# (Groq rejects unexpected 'cache_breakpoint' in message payloads)
+# ---------------------------------------------------------------------------
+# Groq compatibility patch
+# CrewAI's prompt-caching marker sends a 'cache_breakpoint' field that
+# Groq rejects; neutralise it.
+# ---------------------------------------------------------------------------
 try:
     import crewai.llms.cache
 
@@ -27,15 +46,157 @@ except Exception:
     pass
 
 
+# ---------------------------------------------------------------------------
+# Domain metadata — used by both the fallback heuristic and the prompt
+# ---------------------------------------------------------------------------
+
+DOMAIN_META: dict[str, dict] = {
+    "web": {
+        "technical": 90,
+        "resource": 92,
+        "required_skills": ["JavaScript", "React", "HTML", "CSS", "Node", "Python", "SQL"],
+        "tech_stack": "React / Next.js, FastAPI / Express, PostgreSQL / MongoDB",
+    },
+    "aiml": {
+        "technical": 78,
+        "resource": 82,
+        "required_skills": ["Python", "Machine Learning", "TensorFlow", "PyTorch", "Data Science"],
+        "tech_stack": "Python, scikit-learn / PyTorch / TensorFlow, Jupyter, HuggingFace",
+    },
+    "blockchain": {
+        "technical": 76,
+        "resource": 80,
+        "required_skills": ["Solidity", "Web3", "Ethereum", "Smart Contracts", "Blockchain"],
+        "tech_stack": "Solidity, Hardhat, ethers.js, MetaMask, IPFS",
+    },
+    "iot": {
+        "technical": 80,
+        "resource": 76,
+        "required_skills": ["C", "C++", "Python", "MQTT", "Arduino", "Raspberry Pi", "IoT"],
+        "tech_stack": "Arduino / Raspberry Pi, MQTT, InfluxDB, Grafana, AWS IoT",
+    },
+    "data_science": {
+        "technical": 82,
+        "resource": 86,
+        "required_skills": ["Python", "R", "SQL", "Pandas", "Statistics", "Visualization"],
+        "tech_stack": "Python, Pandas, Seaborn / Plotly, Spark, dbt",
+    },
+    "mobile": {
+        "technical": 84,
+        "resource": 88,
+        "required_skills": ["React Native", "Flutter", "Dart", "Swift", "Kotlin", "Android", "iOS"],
+        "tech_stack": "Flutter / React Native, Firebase, REST APIs",
+    },
+    "cloud": {
+        "technical": 83,
+        "resource": 87,
+        "required_skills": ["AWS", "Azure", "GCP", "Docker", "Kubernetes", "DevOps", "Terraform"],
+        "tech_stack": "AWS / GCP / Azure, Docker, Kubernetes, Terraform, CI/CD",
+    },
+}
+
+_DEFAULT_DOMAIN_META = {
+    "technical": 85,
+    "resource": 84,
+    "required_skills": [],
+    "tech_stack": "Open-source tooling appropriate to the domain",
+}
+
+VALID_VERDICTS = frozenset(
+    ["Highly Feasible", "Feasible with Guidance", "Needs Scope Reduction"]
+)
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _clamp(value: int, lo: int = 0, hi: int = 100) -> int:
+    """Clamp an integer to [lo, hi]."""
+    return max(lo, min(hi, value))
+
+
+def _compute_skill_match(student_skills: dict, domain: str) -> int:
+    """
+    Score how well the student's skill profile matches the domain requirements.
+
+    Returns an integer 0–100.
+    Normalises student proficiency (1–5) to a 20–100 scale, then combines:
+      - 70% weight on average proficiency (quality of the skills the student knows)
+      - 30% weight on coverage ratio (breadth of required skills covered)
+
+    This weighting means a highly proficient student who covers even a few
+    key skills scores well, while a student with no relevant skills scores low.
+    """
+    meta = DOMAIN_META.get(domain.lower(), _DEFAULT_DOMAIN_META)
+    required = [s.lower() for s in meta["required_skills"]]
+
+    if not required or not student_skills:
+        return 72  # neutral fallback when no skill data is available
+
+    student_lower = {k.lower(): v for k, v in student_skills.items()}
+
+    total, matched = 0, 0
+    for skill in required:
+        proficiency = student_lower.get(skill)
+        if proficiency is not None:
+            # Normalise 1–5 → 20–100
+            total += _clamp(int(proficiency) * 20, 20, 100)
+            matched += 1
+
+    if matched == 0:
+        return 50  # student listed no skills relevant to this domain
+
+    coverage = matched / len(required)   # fraction of required skills present
+    avg_prof = total / matched           # average proficiency (20–100 scale)
+
+    # 70% proficiency quality + 30% coverage breadth
+    return _clamp(round(avg_prof * 0.70 + coverage * 100 * 0.30))
+
+
+def _timeline_score(days: int) -> int:
+    """Convert project duration in days to a timeline adequacy score."""
+    weeks = days / 7
+    if weeks >= 12:
+        return 95
+    elif weeks >= 8:
+        return 90
+    elif weeks >= 6:
+        return 85
+    elif weeks >= 4:
+        return 78
+    elif weeks >= 2:
+        return 68
+    else:
+        return 55
+
+
+def _verdict_from_score(score: int) -> str:
+    """
+    Determine verdict from overall score.
+    Thresholds match the prompt instructions sent to the LLM.
+    """
+    if score >= 85:
+        return "Highly Feasible"
+    elif score >= 70:
+        return "Feasible with Guidance"
+    else:
+        return "Needs Scope Reduction"
+
+
+# ---------------------------------------------------------------------------
+# LLM factory
+# ---------------------------------------------------------------------------
+
 def _get_llm():
-    """Create the Groq-backed LLM for CrewAI using native LLM class."""
+    """Create the Groq-backed LLM for CrewAI."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY not found in environment variables")
 
     from crewai import LLM
 
-    model_name = os.getenv("GROQ_MODEL", "groq/qwen/qwen3.8-27b")
+    model_name = os.getenv("GROQ_MODEL", "groq/llama-3.3-70b-versatile")
     return LLM(
         model=model_name,
         api_key=api_key,
@@ -43,25 +204,35 @@ def _get_llm():
     )
 
 
+# ---------------------------------------------------------------------------
+# JSON parsing
+# ---------------------------------------------------------------------------
+
 def _parse_json_from_text(text: str) -> dict:
     """
     Extract and parse JSON from LLM output text.
-    Handles cases where the LLM wraps JSON in markdown code blocks.
+    Handles plain JSON, markdown code-fenced JSON, and JSON embedded in prose.
+    Returns {} on any failure — never raises.
     """
-    # Try direct JSON parse first
+    if not text:
+        return {}
+
+    text = str(text)
+
+    # 1. Direct parse
     try:
         return json.loads(text)
     except (json.JSONDecodeError, TypeError):
         pass
 
-    # Try extracting from markdown code blocks
+    # 2. Markdown-fenced blocks and bare {…} fallback
     patterns = [
         r"```json\s*\n?(.*?)\n?\s*```",
         r"```\s*\n?(.*?)\n?\s*```",
         r"\{[\s\S]*\}",
     ]
     for pattern in patterns:
-        match = re.search(pattern, str(text), re.DOTALL)
+        match = re.search(pattern, text, re.DOTALL)
         if match:
             try:
                 candidate = match.group(1) if match.lastindex else match.group(0)
@@ -72,32 +243,81 @@ def _parse_json_from_text(text: str) -> dict:
     return {}
 
 
-def _build_fallback_report(idea_data: dict) -> dict:
+def _validate_and_normalise(parsed: dict) -> Optional[dict]:
     """
-    Generate a basic heuristic feasibility report as fallback
-    when the AI agent call fails.
+    Validate a parsed LLM report dict.  Coerces types and clamps values.
+    Returns None if the minimum required fields are absent.
     """
+    if "overallScore" not in parsed:
+        return None
+
+    metrics_raw = parsed.get("metrics", {})
+
+    def _safe_int(val, default: int) -> int:
+        try:
+            return _clamp(int(val))
+        except (TypeError, ValueError):
+            return default
+
+    metrics = {
+        "technical": _safe_int(metrics_raw.get("technical"), 80),
+        "timeline": _safe_int(metrics_raw.get("timeline"), 80),
+        "resource": _safe_int(metrics_raw.get("resource"), 80),
+        "skillMatch": _safe_int(metrics_raw.get("skillMatch"), 80),
+    }
+
+    overall = _safe_int(parsed.get("overallScore"), 80)
+    verdict = parsed.get("verdict", "")
+    if verdict not in VALID_VERDICTS:
+        verdict = _verdict_from_score(overall)
+
+    return {
+        "overallScore": overall,
+        "verdict": verdict,
+        "metrics": metrics,
+        "strengths": parsed.get("strengths") or [],
+        "bottlenecks": parsed.get("bottlenecks") or [],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Fallback heuristic report
+# ---------------------------------------------------------------------------
+
+def _build_fallback_report(idea_data: dict, student_skills: Optional[dict] = None) -> dict:
+    """
+    Generate a heuristic feasibility report when the AI agent call fails.
+
+    Improvements vs v1:
+      - Five timeline tiers instead of three.
+      - Per-domain skill-match calculation using student_skills.
+      - Verdict thresholds aligned with the AI prompt (85/70 not 88/78).
+      - More specific bottleneck messages.
+    """
+    student_skills = student_skills or {}
     domain = (idea_data.get("domain") or "web").lower()
     days = int(idea_data.get("durationDays") or 30)
-    weeks = max(4, round(days / 7))
     team_size = int(idea_data.get("teamSize") or 3)
 
-    technical = 85 if domain in ("aiml", "blockchain", "iot") else 90
-    timeline = 90 if weeks >= 6 else 80 if weeks >= 4 else 72
-    resource = 82 if domain == "iot" else 88
-    skill_match = 82
+    meta = DOMAIN_META.get(domain, _DEFAULT_DOMAIN_META)
 
-    overall = round(
-        (technical * 0.35) + (timeline * 0.25) + (resource * 0.20) + (skill_match * 0.20)
-    )
+    technical = meta["technical"]
+    resource = meta["resource"]
+    timeline = _timeline_score(days)
+    skill_match = _compute_skill_match(student_skills, domain)
 
-    verdict = (
-        "Highly Feasible"
-        if overall >= 88
-        else "Feasible with Guidance"
-        if overall >= 78
-        else "Needs Scope Reduction"
+    overall = _clamp(
+        round(technical * 0.35 + timeline * 0.25 + resource * 0.20 + skill_match * 0.20)
     )
+    verdict = _verdict_from_score(overall)
+
+    weeks = round(days / 7)
+    if days >= 42:
+        bottleneck = "Integration testing between system components needs early milestone validation."
+    elif days >= 14:
+        bottleneck = "Compressed timeline requires strict sprint adherence and daily standups."
+    else:
+        bottleneck = "Very short window — strongly recommend reducing scope to a focused MVP."
 
     return {
         "overallScore": overall,
@@ -110,71 +330,58 @@ def _build_fallback_report(idea_data: dict) -> dict:
         },
         "strengths": [
             f"Project aligns with current {domain.upper()} academic research trends.",
-            f"Team of {team_size} allows parallel development across components.",
-            "Abundant open-source tools and community resources available.",
+            f"Team of {team_size} enables parallel development across modules.",
+            "Rich open-source ecosystem and community resources are available.",
         ],
         "bottlenecks": [
-            "Integration testing between system components needs early validation."
-            if weeks >= 6
-            else "Compressed timeline requires strict sprint adherence.",
-            "Clear scope definition needed to prevent feature creep.",
+            bottleneck,
+            "Clear scope definition and feature prioritisation are critical to prevent overruns.",
         ],
         "filesAnalyzed": [],
         "aiGenerated": False,
     }
 
 
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
 def run_feasibility_agent(
     idea_data: dict,
-    student_skills: dict = None,
-    uploaded_files: list = None,
+    student_skills: Optional[dict] = None,
+    uploaded_files: Optional[list] = None,
 ) -> dict:
     """
-    Main entry point: runs the CrewAI feasibility agent.
+    Run the CrewAI feasibility agent.
 
     Args:
-        idea_data: dict with keys title, desc, domain, teamSize, durationDays, etc.
-        student_skills: dict mapping skill names to proficiency levels (1-5)
-        uploaded_files: list of dicts with name, contentBase64, contentType
+        idea_data:       dict with keys title, desc, domain, teamSize,
+                         durationDays, techIdeas, features.
+        student_skills:  dict mapping skill names → proficiency (1–5).
+        uploaded_files:  list of dicts with name, contentBase64, contentType.
 
     Returns:
-        dict: Structured feasibility report matching frontend schema.
+        dict: Structured feasibility report matching the FeasibilityResponse schema.
     """
     student_skills = student_skills or {}
     uploaded_files = uploaded_files or []
 
-    # --- Step 1: Extract text from uploaded files ---
+    # Step 1 — extract uploaded file text
     file_context = extract_text_from_files(uploaded_files)
-    files_analyzed = [f.get("name", "unknown") for f in uploaded_files if f.get("contentBase64")]
+    files_analyzed = [
+        f.get("name", "unknown") for f in uploaded_files if f.get("contentBase64")
+    ]
 
-    # --- Step 2: Build the CrewAI agent ---
+    # Step 2 — initialise the LLM (may fall back if unavailable)
     try:
         llm = _get_llm()
     except Exception as e:
         print(f"[FEASIBILITY AGENT] LLM init failed: {e}")
-        return _build_fallback_report(idea_data)
+        fallback = _build_fallback_report(idea_data, student_skills)
+        fallback["filesAnalyzed"] = files_analyzed
+        return fallback
 
-    feasibility_agent = Agent(
-        role="Senior Academic Project Feasibility Analyst",
-        goal=(
-            "Evaluate the technical viability, timeline adequacy, resource availability, "
-            "and skill-match of student academic project ideas. Provide rigorous, "
-            "actionable feasibility scores and recommendations."
-        ),
-        backstory=(
-            "You are an expert academic mentor and project evaluator with 15+ years of "
-            "experience guiding Computer Science & Engineering capstone projects. You have "
-            "supervised hundreds of student teams across domains like AI/ML, Web Development, "
-            "IoT, Blockchain, and Data Science. You analyze project descriptions, uploaded "
-            "reference documents, student skill profiles, and timeline constraints to produce "
-            "precise feasibility assessments that help students succeed."
-        ),
-        llm=llm,
-        verbose=False,
-        allow_delegation=False,
-    )
-
-    # --- Step 3: Build the task ---
+    # Step 3 — assemble prompt context
     title = idea_data.get("title", "Untitled Project")
     desc = idea_data.get("desc", "No description provided")
     domain = idea_data.get("domain", "web")
@@ -183,16 +390,17 @@ def run_feasibility_agent(
     tech_ideas = idea_data.get("techIdeas", "")
     features = idea_data.get("features", [])
 
+    domain_meta = DOMAIN_META.get(domain.lower(), _DEFAULT_DOMAIN_META)
+    recommended_stack = domain_meta["tech_stack"]
+
     skills_text = (
         ", ".join(f"{k}: {v}/5" for k, v in student_skills.items())
         if student_skills
         else "Not provided"
     )
-
     features_text = (
         "\n".join(f"  - {f}" for f in features) if features else "Not specified"
     )
-
     file_section = (
         f"\n\nUPLOADED REFERENCE DOCUMENTS (extracted text):\n{file_context}"
         if file_context
@@ -209,6 +417,7 @@ PROJECT DETAILS:
 - Team Size: {team_size} members
 - Duration: {duration_days} days ({round(int(duration_days) / 7)} weeks approx.)
 - Proposed Technologies: {tech_ideas if tech_ideas else 'Not specified'}
+- Commonly Used Tech for {domain.upper()}: {recommended_stack}
 - Key Features:
 {features_text}
 
@@ -232,63 +441,71 @@ You MUST respond with ONLY a valid JSON object (no extra text, no markdown) with
 }}
 
 SCORING GUIDELINES:
-- technical: How complex is the project technically? Higher = more feasible (simpler/well-supported).
+- technical: How complex is the project technically? Higher = more feasible (simpler / well-supported tools exist).
 - timeline: Is the duration adequate for the scope? Higher = sufficient time.
-- resource: Are tools, datasets, APIs, hardware available? Higher = readily available.
-- skillMatch: Do the student's skills match the project requirements? Higher = strong match.
+- resource: Are tools, datasets, APIs, hardware freely available? Higher = readily accessible.
+- skillMatch: Do the student's skills match the domain requirements? Higher = strong match.
 - overallScore: Weighted average — technical(35%) + timeline(25%) + resource(20%) + skillMatch(20%).
 - verdict: "Highly Feasible" if overall >= 85, "Feasible with Guidance" if >= 70, else "Needs Scope Reduction".
 
-Be specific and contextual in strengths and bottlenecks — reference the actual project details, 
-domain challenges, and any insights from uploaded documents.
+Be specific and contextual in strengths and bottlenecks — reference the actual project title,
+domain challenges, proposed technology stack, and any insights from uploaded documents.
 """
+
+    feasibility_agent = Agent(
+        role="Senior Academic Project Feasibility Analyst",
+        goal=(
+            "Evaluate the technical viability, timeline adequacy, resource availability, "
+            "and skill-match of student academic project ideas. Provide rigorous, "
+            "actionable feasibility scores and recommendations."
+        ),
+        backstory=(
+            "You are an expert academic mentor and project evaluator with 15+ years of "
+            "experience guiding Computer Science & Engineering capstone projects. You have "
+            "supervised hundreds of student teams across domains like AI/ML, Web Development, "
+            "IoT, Blockchain, and Data Science. You analyse project descriptions, uploaded "
+            "reference documents, student skill profiles, and timeline constraints to produce "
+            "precise feasibility assessments that help students succeed."
+        ),
+        llm=llm,
+        verbose=False,
+        allow_delegation=False,
+    )
 
     feasibility_task = Task(
         description=task_description,
-        expected_output="A valid JSON object containing the feasibility report with overallScore, verdict, metrics, strengths, and bottlenecks.",
+        expected_output=(
+            "A valid JSON object containing the feasibility report with "
+            "overallScore, verdict, metrics, strengths, and bottlenecks."
+        ),
         agent=feasibility_agent,
     )
 
-    # --- Step 4: Run the Crew ---
+    # Step 4 — run the Crew
     try:
         crew = Crew(
             agents=[feasibility_agent],
             tasks=[feasibility_task],
             verbose=False,
         )
-
         result = crew.kickoff()
-
-        # Parse the result
         result_text = str(result)
         parsed = _parse_json_from_text(result_text)
+        normalised = _validate_and_normalise(parsed)
 
-        if parsed and "overallScore" in parsed:
-            # Ensure all expected fields exist
-            report = {
-                "overallScore": int(parsed.get("overallScore", 80)),
-                "verdict": parsed.get("verdict", "Feasible with Guidance"),
-                "metrics": {
-                    "technical": int(parsed.get("metrics", {}).get("technical", 80)),
-                    "timeline": int(parsed.get("metrics", {}).get("timeline", 80)),
-                    "resource": int(parsed.get("metrics", {}).get("resource", 80)),
-                    "skillMatch": int(parsed.get("metrics", {}).get("skillMatch", 80)),
-                },
-                "strengths": parsed.get("strengths", []),
-                "bottlenecks": parsed.get("bottlenecks", []),
-                "filesAnalyzed": files_analyzed,
-                "aiGenerated": True,
-            }
-            return report
-        else:
-            print(f"[FEASIBILITY AGENT] Could not parse LLM output: {result_text[:500]}")
-            fallback = _build_fallback_report(idea_data)
-            fallback["filesAnalyzed"] = files_analyzed
-            return fallback
+        if normalised:
+            normalised["filesAnalyzed"] = files_analyzed
+            normalised["aiGenerated"] = True
+            return normalised
+
+        # LLM responded but output was unparseable
+        print(f"[FEASIBILITY AGENT] Could not parse LLM output: {result_text[:500]}")
 
     except Exception as e:
         print(f"[FEASIBILITY AGENT] Crew execution failed: {e}")
         traceback.print_exc()
-        fallback = _build_fallback_report(idea_data)
-        fallback["filesAnalyzed"] = files_analyzed
-        return fallback
+
+    # Step 5 — graceful fallback
+    fallback = _build_fallback_report(idea_data, student_skills)
+    fallback["filesAnalyzed"] = files_analyzed
+    return fallback

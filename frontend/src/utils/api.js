@@ -17,10 +17,73 @@ export function submitOnboarding(payload) {
   return postJSON('/onboarding', payload);
 }
 
+export function registerUser(payload) {
+  return postJSON('/api/auth/register', payload);
+}
+
+export function loginUser(payload) {
+  return postJSON('/api/auth/login', payload);
+}
+
+export function updateUserProfile(payload) {
+  return postJSON('/api/auth/update-profile', payload);
+}
+
+export async function getUserProfile(email) {
+  const res = await fetch(`${API_BASE}/api/auth/user?email=${encodeURIComponent(email)}`);
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err);
+  }
+  return res.json();
+}
+
 export function submitIdeaToBackend(payload) {
   return postJSON('/submit-idea', payload);
 }
 
 export async function fetchFeasibilityReport(payload) {
   return postJSON('/api/feasibility-check', payload);
+}
+
+export async function fetchScopeReport(payload) {
+  return postJSON('/api/scope-definition', payload);
+}
+
+export async function fetchUserIdeas(email) {
+  const url = email ? `${API_BASE}/api/ideas?email=${encodeURIComponent(email)}` : `${API_BASE}/api/ideas`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err);
+  }
+  return res.json();
+}
+
+export async function updateIdeaInBackend(ideaId, updates) {
+  const res = await fetch(`${API_BASE}/api/ideas/${encodeURIComponent(ideaId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err);
+  }
+  return res.json();
+}
+
+export async function deleteIdeaInBackend(ideaId) {
+  const res = await fetch(`${API_BASE}/api/ideas/${encodeURIComponent(ideaId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err);
+  }
+  return res.json();
+}
+
+export async function postChat(message, history = []) {
+  return postJSON('/api/chat', { message, history });
 }

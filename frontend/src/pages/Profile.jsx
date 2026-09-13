@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
+import ChatbotPanel from '../components/ChatbotPanel';
 import { Store } from '../utils/store';
 import { showToast } from '../utils/toast';
 import { SKILLS, LEVEL_LABELS, DOMAINS } from '../utils/constants';
-import { submitOnboarding } from '../utils/api';
+import { submitOnboarding, updateUserProfile } from '../utils/api';
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -105,6 +106,7 @@ export default function Profile() {
   };
 
   const handleSave = async () => {
+    const hasSkills = Object.keys(skills).length > 0;
     const finalProfile = {
       ...profile,
       name: `${profile.firstName.trim()} ${profile.lastName.trim()}`,
@@ -114,18 +116,22 @@ export default function Profile() {
       otherDomains: otherDomains.trim(),
       aboutMe: aboutMe.trim(),
       teamSize,
-      avatar
+      avatar,
+      hasCompletedProfile: hasSkills
     };
 
     Store.set('profile', finalProfile);
 
-    // Also update currentUser name
+    // Also update currentUser with profile completion flag and latest skills/domains
     const curUser = Store.get('currentUser') || {};
     Store.set('currentUser', {
       ...curUser,
       name: finalProfile.name,
       email: finalProfile.email,
-      rollNo: finalProfile.rollNo
+      rollNo: finalProfile.rollNo,
+      skills,
+      domains,
+      hasCompletedProfile: hasSkills
     });
 
     // Send onboarding data to the backend
@@ -144,16 +150,34 @@ export default function Profile() {
         aboutMe: aboutMe.trim(),
         teamSize
       });
-      Store.set('studentId', result.student_id);
+      if (result && result.student_id) {
+        Store.set('studentId', result.student_id);
+      }
     } catch (err) {
-      console.error('Onboarding API call failed:', err);
-      showToast('Saved locally, but backend sync failed. Is the backend running?', '⚠️');
+      console.warn('Onboarding API call error:', err);
     }
 
-    showToast('Profile saved successfully!', '🎉');
+    // Sync to auth user profile so user record permanently retains skills and completion status
+    try {
+      await updateUserProfile({
+        email: profile.email,
+        name: finalProfile.name,
+        skills,
+        domains,
+        aboutMe: aboutMe.trim(),
+        teamSize,
+        branch: profile.branch,
+        year: profile.year,
+        rollNo: profile.rollNo
+      });
+    } catch (err) {
+      console.warn('User profile sync error:', err);
+    }
+
+    showToast('Profile & skills saved successfully!', '🎉');
     setTimeout(() => {
       navigate('/dashboard');
-    }, 700);
+    }, 600);
   };
 
   const toggleDomain = (id) => {
@@ -176,6 +200,7 @@ export default function Profile() {
   return (
     <>
       <Navbar />
+      <ChatbotPanel />
       <div className="page-bg-glow"></div>
       <div className="page-bg-glow-2"></div>
 

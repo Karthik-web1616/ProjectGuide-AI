@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Store } from '../utils/store';
 import { showToast } from '../utils/toast';
+import { loginUser, registerUser } from '../utils/api';
 
 export default function Auth() {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ export default function Auth() {
   const [rollNo, setRollNo] = useState('');
   const [loading, setLoading] = useState(false);
   const [passwordError, setPasswordError] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   useEffect(() => {
     const current = Store.get('currentUser');
@@ -20,8 +22,9 @@ export default function Auth() {
       if (current.role === 'faculty') {
         navigate('/faculty-dashboard');
       } else {
-        const profile = Store.get('profile');
-        if (!profile || !profile.skills || Object.keys(profile.skills).length === 0) {
+        const profile = Store.get('profile') || {};
+        const hasSkills = Boolean(current.hasCompletedProfile || (profile.skills && Object.keys(profile.skills).length > 0));
+        if (!hasSkills) {
           navigate('/profile');
         } else {
           navigate('/dashboard');
@@ -30,7 +33,7 @@ export default function Auth() {
     }
   }, [navigate]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !password) {
       showToast('Please fill all required fields.', '⚠️');
@@ -38,56 +41,170 @@ export default function Auth() {
     }
     if (password.length < 6) {
       setPasswordError(true);
+      showToast('Password must be at least 6 characters.', '⚠️');
       return;
     }
     setPasswordError(false);
     setLoading(true);
 
-    const computedName = fullName.trim() || (email.split('@')[0].replace('.', ' ').replace(/(^\w|\s\w)/g, m => m.toUpperCase()));
-    const computedRoll = rollNo.trim() || (role === 'faculty' ? 'FAC001' : '21CS101');
+    const cleanEmail = email.trim().toLowerCase();
 
-    const user = {
-      email,
-      name: computedName,
-      role,
-      rollNo: computedRoll,
-      loggedIn: true,
-      authTime: new Date().toISOString()
-    };
+    if (mode === 'login') {
+      try {
+        const resp = await loginUser({ email: cleanEmail, password, role });
+        const user = resp.user || {};
+        const hasCompleted = Boolean(
+          resp.hasCompletedProfile || 
+          user.hasCompletedProfile || 
+          (user.skills && Object.keys(user.skills).length > 0)
+        );
 
-    Store.set('currentUser', user);
+        const authUser = {
+          ...user,
+          email: cleanEmail,
+          role: user.role || role,
+          hasCompletedProfile: hasCompleted,
+          loggedIn: true,
+          authTime: new Date().toISOString()
+        };
+        Store.set('currentUser', authUser);
 
-    if (mode === 'register' || !Store.get('profile')) {
-      const existing = Store.get('profile') || {};
-      const parts = computedName.split(' ');
-      Store.set('profile', {
-        ...existing,
-        name: computedName,
-        firstName: parts[0] || '',
-        lastName: parts.slice(1).join(' ') || '',
-        email: user.email,
-        rollNo: user.rollNo,
-        branch: existing.branch || (role === 'faculty' ? 'CSE' : 'Computer Science & Engineering'),
-        year: existing.year || '3rd Year'
-      });
-    }
+        // Load profile with actual saved user skills & domains from backend
+        const parts = (user.name || '').split(' ');
+        const profileData = {
+          name: user.name || '',
+          firstName: parts[0] || '',
+          lastName: parts.slice(1).join(' ') || '',
+          email: cleanEmail,
+          rollNo: user.rollNo || (authUser.role === 'faculty' ? 'FAC001' : '21CS101'),
+          branch: user.branch || (authUser.role === 'faculty' ? 'CSE' : 'Computer Science & Engineering'),
+          year: user.year || (authUser.role === 'faculty' ? 'Faculty' : '3rd Year'),
+          skills: user.skills || {},
+          domains: user.domains || [],
+          aboutMe: user.aboutMe || '',
+          teamSize: user.teamSize || '3',
+          hasCompletedProfile: hasCompleted
+        };
+        Store.set('profile', profileData);
 
-    setTimeout(() => {
-      showToast(`Welcome, ${computedName}!`, '🎉');
-      setLoading(false);
-      setTimeout(() => {
-        if (role === 'faculty') {
-          navigate('/faculty-dashboard');
-        } else {
-          const profile = Store.get('profile');
-          if (!profile || !profile.skills || Object.keys(profile.skills).length === 0) {
-            navigate('/profile');
-          } else {
+        showToast(`Welcome back, ${user.name || 'User'}!`, '🎉');
+        setLoading(false);
+
+        setTimeout(() => {
+          if (authUser.role === 'faculty') {
+            navigate('/faculty-dashboard');
+          } else if (hasCompleted) {
+            // Already registered & gave skills/interests -> directly go to Dashboard!
             navigate('/dashboard');
+          } else {
+            // Student has not completed profile yet
+            navigate('/profile');
+          }
+        }, 600);
+
+      } catch (err) {
+        setLoading(false);
+        const rawMsg = err.message || '';
+        let displayMsg = 'Sign in failed. Please check your credentials.';
+
+        if (rawMsg.includes('404') || rawMsg.toLowerCase().includes('not found') || rawMsg.toLowerCase().includes('account not found')) {
+          displayMsg = "Account not found. Please click 'Create Account' to register first.";
+        } else if (rawMsg.includes('401') || rawMsg.toLowerCase().includes('incorrect password')) {
+          displayMsg = "Incorrect password. Please try again.";
+        } else {
+          try {
+            const jsonPart = rawMsg.slice(rawMsg.indexOf('{'));
+            const parsed = JSON.parse(jsonPart);
+            if (parsed.detail) displayMsg = parsed.detail;
+          } catch {
+            if (rawMsg) displayMsg = rawMsg.replace(/^API error \d+:\s*/, '');
           }
         }
-      }, 700);
-    }, 600);
+        setAuthError(displayMsg);
+        showToast(displayMsg, '❌');
+      }
+    } else {
+      // Register mode
+      if (!fullName.trim()) {
+        showToast('Please enter your full name.', '⚠️');
+        setAuthError('Please enter your full name.');
+        setLoading(false);
+        return;
+      }
+      try {
+        const computedRoll = rollNo.trim() || (role === 'faculty' ? 'FAC001' : '21CS101');
+        const computedBranch = role === 'faculty' ? 'CSE' : 'Computer Science & Engineering';
+        const computedYear = role === 'faculty' ? 'Faculty' : '3rd Year';
+
+        const resp = await registerUser({
+          email: cleanEmail,
+          password,
+          name: fullName.trim(),
+          role,
+          rollNo: computedRoll,
+          branch: computedBranch,
+          year: computedYear
+        });
+
+        const user = resp.user || {};
+        const isFaculty = role === 'faculty';
+        const authUser = {
+          ...user,
+          email: cleanEmail,
+          role,
+          hasCompletedProfile: isFaculty,
+          loggedIn: true,
+          authTime: new Date().toISOString()
+        };
+        Store.set('currentUser', authUser);
+
+        const parts = fullName.trim().split(' ');
+        const profileData = {
+          name: fullName.trim(),
+          firstName: parts[0] || '',
+          lastName: parts.slice(1).join(' ') || '',
+          email: cleanEmail,
+          rollNo: computedRoll,
+          branch: computedBranch,
+          year: computedYear,
+          skills: {},
+          domains: [],
+          hasCompletedProfile: isFaculty
+        };
+        Store.set('profile', profileData);
+
+        showToast(`Account created! Welcome, ${fullName.trim()}!`, '🎉');
+        setLoading(false);
+
+        setTimeout(() => {
+          if (isFaculty) {
+            navigate('/faculty-dashboard');
+          } else {
+            navigate('/profile');
+          }
+        }, 600);
+
+      } catch (err) {
+        setLoading(false);
+        const rawMsg = err.message || '';
+        let displayMsg = 'Registration failed. Please try again.';
+
+        if (rawMsg.includes('already exists')) {
+          displayMsg = 'An account with this email already exists. Please Sign In.';
+          setMode('login');
+        } else {
+          try {
+            const jsonPart = rawMsg.slice(rawMsg.indexOf('{'));
+            const parsed = JSON.parse(jsonPart);
+            if (parsed.detail) displayMsg = parsed.detail;
+          } catch {
+            if (rawMsg) displayMsg = rawMsg.replace(/^API error \d+:\s*/, '');
+          }
+        }
+        setAuthError(displayMsg);
+        showToast(displayMsg, '⚠️');
+      }
+    }
   };
 
   const fillDemoStudent = () => {
@@ -95,6 +212,7 @@ export default function Auth() {
     setPassword('password123');
     setRole('student');
     setMode('login');
+    setAuthError('');
     showToast('Loaded Student demo credentials', '👨‍🎓');
   };
 
@@ -103,6 +221,7 @@ export default function Auth() {
     setPassword('faculty123');
     setRole('faculty');
     setMode('login');
+    setAuthError('');
     showToast('Loaded Faculty demo credentials', '👨‍🏫');
   };
 
@@ -157,14 +276,14 @@ export default function Auth() {
               <button 
                 type="button"
                 className={`auth-tab ${!isReg ? 'active' : ''}`} 
-                onClick={() => setMode('login')}
+                onClick={() => { setMode('login'); setAuthError(''); }}
               >
                 Sign In
               </button>
               <button 
                 type="button"
                 className={`auth-tab ${isReg ? 'active' : ''}`} 
-                onClick={() => setMode('register')}
+                onClick={() => { setMode('register'); setAuthError(''); }}
               >
                 Create Account
               </button>
@@ -177,7 +296,7 @@ export default function Auth() {
                   name="userRole" 
                   value="student" 
                   checked={role === 'student'} 
-                  onChange={() => setRole('student')} 
+                  onChange={() => { setRole('student'); setAuthError(''); }} 
                 />
                 👨‍🎓 Student
               </label>
@@ -187,11 +306,18 @@ export default function Auth() {
                   name="userRole" 
                   value="faculty" 
                   checked={role === 'faculty'} 
-                  onChange={() => setRole('faculty')} 
+                  onChange={() => { setRole('faculty'); setAuthError(''); }} 
                 />
                 👨‍🏫 Faculty
               </label>
             </div>
+
+            {authError && (
+              <div className="auth-alert-box">
+                <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+                <span>{authError}</span>
+              </div>
+            )}
 
             <form className="auth-form" onSubmit={handleSubmit}>
               
@@ -203,7 +329,7 @@ export default function Auth() {
                     type="text" 
                     placeholder="e.g. Arjun Sharma"
                     value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    onChange={(e) => { setFullName(e.target.value); setAuthError(''); }}
                   />
                 </div>
               )}
@@ -217,7 +343,7 @@ export default function Auth() {
                   required 
                   autoComplete="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => { setEmail(e.target.value); setAuthError(''); }}
                 />
               </div>
 
@@ -230,7 +356,7 @@ export default function Auth() {
                   required 
                   autoComplete={isReg ? 'new-password' : 'current-password'}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => { setPassword(e.target.value); setAuthError(''); }}
                 />
                 {passwordError && (
                   <span className="form-error">Password must be at least 6 characters.</span>
@@ -261,10 +387,10 @@ export default function Auth() {
                 </div>
               )}
 
-              <button 
-                type="submit" 
-                className="btn btn-primary btn-full btn-lg" 
-                style={{ marginTop: '0.25rem' }} 
+              <button
+                type="submit"
+                className="btn btn-primary btn-full btn-lg"
+                style={{ marginTop: '0.25rem' }}
                 disabled={loading}
               >
                 {loading ? '⏳ Authenticating...' : (isReg ? '✨ Create Account & Proceed' : 'Sign In')}

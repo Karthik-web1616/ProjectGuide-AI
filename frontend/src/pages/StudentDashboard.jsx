@@ -1,10 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
+import ChatbotPanel from '../components/ChatbotPanel';
 import FeasibilityReportModal from '../components/FeasibilityReportModal';
+import ScopeReportModal from '../components/ScopeReportModal';
 import { Store, fmtDate } from '../utils/store';
 import { showToast } from '../utils/toast';
-import { submitIdeaToBackend, fetchFeasibilityReport } from '../utils/api';
+import {
+  submitIdeaToBackend,
+  fetchFeasibilityReport,
+  fetchScopeReport,
+  getUserProfile,
+  fetchUserIdeas,
+  updateIdeaInBackend,
+  deleteIdeaInBackend
+} from '../utils/api';
 
 export default function StudentDashboard() {
   const navigate = useNavigate();
@@ -21,6 +31,11 @@ export default function StudentDashboard() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [analyzingProjectTitle, setAnalyzingProjectTitle] = useState(null);
+
+  // AI Scope Definition Agent State (Real CrewAI + Groq)
+  const [selectedScopeReport, setSelectedScopeReport] = useState(null);
+  const [isScopeModalOpen, setIsScopeModalOpen] = useState(false);
+  const [scopingProjectTitle, setScopingProjectTitle] = useState(null);
   
   // Idea Form State
   const [ideaTitle, setIdeaTitle] = useState('');
@@ -50,47 +65,7 @@ export default function StudentDashboard() {
   const chatMessagesEndRef = useRef(null);
   const avatarInputRef = useRef(null);
 
-  useEffect(() => {
-    const user = Store.get('currentUser');
-    if (!user || !user.loggedIn) {
-      navigate('/login');
-      return;
-    }
-    const p = Store.get('profile');
-    if (!p || !p.skills || Object.keys(p.skills).length === 0) {
-      navigate('/profile');
-      return;
-    }
-    setProfile(p);
-
-    const storedAvatar = Store.get('avatarDataUrl') || p.avatar || user.avatar;
-    if (storedAvatar) setAvatar(storedAvatar);
-
-    // Initial domain & team size
-    if (p.domains && p.domains.length > 0) {
-      setIdeaDomain(p.domains[0]);
-    }
-    if (p.teamSize) {
-      setIdeaTeamSize(p.teamSize);
-    }
-
-    loadProjects();
-  }, [navigate]);
-
-  useEffect(() => {
-    chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const loadProjects = () => {
-    let projs = Store.get('projects') || [];
-    // Migration fallback for single project
-    const singleProj = Store.get('project');
-    if (singleProj && projs.length === 0) {
-      projs = [singleProj];
-      Store.set('projects', projs);
-    }
-    setProjects(projs);
-
+  const updateStats = (projs = []) => {
     const first = projs[0];
     const feas = first?.feasibility ? `${first.feasibility}%` : '—';
     const verdict = first?.feasibilityReport?.verdict || 'Awaiting Review';
@@ -105,7 +80,119 @@ export default function StudentDashboard() {
     });
   };
 
+  const loadProjects = async (forcedEmail = null) => {
+    const user = Store.get('currentUser');
+    const email = (forcedEmail || user?.email || '').trim().toLowerCase();
+    if (!email) return;
+
+    // 1. Immediate load from account-isolated localStorage
+    let userProjs = Store.getUserProjects(email);
+    setProjects(userProjs);
+    updateStats(userProjs);
+
+    // 2. Query backend for this specific user's ideas
+    try {
+      const remoteIdeas = await fetchUserIdeas(email);
+      if (Array.isArray(remoteIdeas)) {
+        const mapped = remoteIdeas.map(item => ({
+          id: item.idea_id || item.id || item._id,
+          idea_id: item.idea_id || item.id || item._id,
+          title: item.title || 'Academic Project',
+          desc: item.desc || '',
+          domain: item.domain || 'web',
+          teamSize: item.team_size || item.teamSize || '3',
+          durationDays: item.duration_days || item.durationDays || 30,
+          durationUnit: item.duration_unit || item.durationUnit || 'weeks',
+          techIdeas: item.tech_ideas || item.techIdeas || '',
+          refLink: item.refLink || '',
+          features: item.features || [],
+          uploadedFiles: item.uploaded_files || item.uploadedFiles || [],
+          feasibility: item.feasibility || (item.feasibilityReport ? item.feasibilityReport.overallScore : null),
+          feasibilityReport: item.feasibilityReport || item.feasibility_report || null,
+          scopeReport: item.scopeReport || item.scope_report || null,
+          status: item.status || 'pending_review',
+          submittedAt: item.created_at || item.submittedAt || new Date().toISOString()
+        }));
+
+        const combined = mapped.map(rm => {
+          const localMatch = userProjs.find(lp => (lp.id && lp.id === rm.id) || lp.title === rm.title);
+          if (localMatch) {
+            return {
+              ...rm,
+              rawFiles: localMatch.rawFiles || rm.uploadedFiles,
+              feasibilityReport: rm.feasibilityReport || localMatch.feasibilityReport,
+              scopeReport: rm.scopeReport || localMatch.scopeReport,
+              feasibility: rm.feasibility || localMatch.feasibility,
+            };
+          }
+          return rm;
+        });
+
+        setProjects(combined);
+        Store.setUserProjects(email, combined);
+        updateStats(combined);
+      }
+    } catch (err) {
+      console.log('Backend user ideas fetch:', err);
+    }
+  };
+
+  useEffect(() => {
+    const user = Store.get('currentUser');
+    if (!user || !user.loggedIn) {
+      navigate('/login');
+      return;
+    }
+    let p = Store.get('profile');
+    const hasCompleted = Boolean(
+      user.hasCompletedProfile ||
+      p?.hasCompletedProfile ||
+      (p?.skills && Object.keys(p.skills).length > 0)
+    );
+
+    if (!hasCompleted && (!p || !p.skills || Object.keys(p.skills).length === 0)) {
+      getUserProfile(user.email).then(remoteUser => {
+        if (remoteUser && (remoteUser.hasCompletedProfile || (remoteUser.skills && Object.keys(remoteUser.skills).length > 0))) {
+          const profileData = {
+            ...remoteUser,
+            skills: remoteUser.skills || {},
+            domains: remoteUser.domains || [],
+            hasCompletedProfile: true
+          };
+          Store.set('profile', profileData);
+          setProfile(profileData);
+          loadProjects(user.email);
+        } else {
+          navigate('/profile');
+        }
+      }).catch(() => {
+        navigate('/profile');
+      });
+      return;
+    }
+    if (p) {
+      setProfile(p);
+      if (p.domains && p.domains.length > 0) {
+        setIdeaDomain(p.domains[0]);
+      }
+      if (p.teamSize) {
+        setIdeaTeamSize(p.teamSize);
+      }
+    }
+
+    const storedAvatar = Store.get('avatarDataUrl') || p?.avatar || user.avatar;
+    if (storedAvatar) setAvatar(storedAvatar);
+
+    loadProjects(user.email);
+  }, [navigate]);
+
+  useEffect(() => {
+    chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
   const handleCheckFeasibility = async (proj, pIndex = null) => {
+    const user = Store.get('currentUser');
+    const email = user?.email;
     setAnalyzingProjectTitle(proj.title);
     try {
       // Prepare files with base64 content for text extraction
@@ -134,10 +221,10 @@ export default function StudentDashboard() {
         uploadedFiles: filesToSend,
       });
 
-      let currentProjs = Store.get('projects') || [...projects];
+      let currentProjs = email ? Store.getUserProjects(email) : [...projects];
       let targetIdx = pIndex;
       if (targetIdx === null) {
-        targetIdx = currentProjs.findIndex(p => p.title === proj.title);
+        targetIdx = currentProjs.findIndex(p => p.title === proj.title || (p.id && p.id === proj.id));
       }
 
       const updatedProj = {
@@ -157,16 +244,25 @@ export default function StudentDashboard() {
         currentProjs.unshift(updatedProj);
       }
 
-      Store.set('projects', currentProjs);
-      Store.set('project', currentProjs[0]);
+      if (email) {
+        Store.setUserProjects(email, currentProjs);
+      }
       setProjects(currentProjs);
-      loadProjects();
+      updateStats(currentProjs);
+
+      // Persist to backend
+      const ideaId = updatedProj.id || updatedProj.idea_id;
+      if (ideaId) {
+        updateIdeaInBackend(ideaId, {
+          feasibility: report.overallScore,
+          feasibilityReport: report,
+          status: 'reviewed'
+        }).catch(err => console.warn('Could not sync report to backend:', err));
+      }
 
       setSelectedReport(report);
-      setSelectedProject(proj);
+      setSelectedProject(updatedProj);
       setIsReportModalOpen(true);
-
-      showToast(`AI Feasibility Score: ${report.overallScore}% (${report.verdict})`, '✨');
     } catch (err) {
       console.error('Feasibility agent failed:', err);
       showToast('AI Feasibility agent failed. Backend running?', '❌');
@@ -175,6 +271,64 @@ export default function StudentDashboard() {
     }
   };
 
+  // ── Scope Definition Agent handler ──
+  const handleRunScope = async (proj, pIndex = null) => {
+    const user = Store.get('currentUser');
+    const email = user?.email;
+    setScopingProjectTitle(proj.title);
+    try {
+      const filesRaw = proj.rawFiles || proj.uploadedFiles || [];
+      const filesToSend = [];
+      for (const f of filesRaw) {
+        if (f.dataUrl) {
+          const base64Content = f.dataUrl.split(',')[1] || '';
+          filesToSend.push({ name: f.name, contentBase64: base64Content, contentType: f.type });
+        }
+      }
+
+      const scopeReport = await fetchScopeReport({
+        title: proj.title || 'Academic Project',
+        desc: proj.desc || '',
+        domain: (proj.domain || 'web').toLowerCase(),
+        teamSize: String(proj.teamSize || 3),
+        durationDays: parseInt(proj.durationDays) || 30,
+        techIdeas: proj.techIdeas || '',
+        features: proj.features || [],
+        studentSkills: profile?.skills || {},
+        uploadedFiles: filesToSend,
+      });
+
+      // Persist scope to project
+      let currentProjs = email ? Store.getUserProjects(email) : [...projects];
+      let targetIdx = pIndex;
+      if (targetIdx === null) {
+        targetIdx = currentProjs.findIndex(p => p.title === proj.title || (p.id && p.id === proj.id));
+      }
+      if (targetIdx !== -1 && targetIdx !== null && currentProjs[targetIdx]) {
+        currentProjs[targetIdx] = { ...currentProjs[targetIdx], scopeReport };
+      }
+      if (email) {
+        Store.setUserProjects(email, currentProjs);
+      }
+      setProjects(currentProjs);
+      updateStats(currentProjs);
+
+      // Persist to backend
+      const ideaId = proj.id || proj.idea_id;
+      if (ideaId) {
+        updateIdeaInBackend(ideaId, { scopeReport }).catch(err => console.warn('Scope sync failed:', err));
+      }
+
+      setSelectedScopeReport(scopeReport);
+      setSelectedProject(proj);
+      setIsScopeModalOpen(true);
+    } catch (err) {
+      console.error('Scope agent failed:', err);
+      showToast('Scope agent failed. Is the backend running?', '❌');
+    } finally {
+      setScopingProjectTitle(null);
+    }
+  };
   const handleAvatarUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -221,31 +375,6 @@ export default function StudentDashboard() {
   };
 
   const closeIdeaModal = () => setIsModalOpen(false);
-
-  const handleQuickFillSample = (e) => {
-    const sampleId = e.target.value;
-    if (!sampleId) return;
-    const sample = SAMPLE_PROJECT_IDEAS.find(s => s.id === sampleId);
-    if (sample) {
-      setIdeaTitle(sample.title);
-      setIdeaDesc(sample.desc);
-      setIdeaDomain(sample.domain);
-      setIdeaDuration(sample.durationDays.toString());
-      setIdeaTeamSize(sample.teamSize);
-      showToast('Filled form with sample project idea!', '💡');
-    }
-  };
-
-  // Duration display helper
-  const getDurationDisplay = (daysStr) => {
-    const d = parseInt(daysStr) || 0;
-    if (d <= 0) return null;
-    const weeks = Math.floor(d / 7);
-    const rem = d % 7;
-    if (weeks === 0) return `${d} day${d !== 1 ? 's' : ''}`;
-    if (rem === 0) return `${weeks} week${weeks !== 1 ? 's' : ''}`;
-    return `${weeks} week${weeks !== 1 ? 's' : ''} ${rem} day${rem !== 1 ? 's' : ''}`;
-  };
 
   // Feature tag helpers
   const addFeature = () => {
@@ -334,13 +463,16 @@ export default function StudentDashboard() {
     setTimeout(() => { ta.focus(); ta.setSelectionRange(start + replaced.length, start + replaced.length); }, 0);
   };
 
-  const submitIdea = (e) => {
+  const submitIdea = async (e) => {
     e.preventDefault();
     if (!ideaDesc.trim()) {
       showToast('Please enter an idea description.', '⚠️');
       return;
     }
     setIsSubmitting(true);
+
+    const user = Store.get('currentUser');
+    const email = (user?.email || '').trim().toLowerCase();
 
     const rawDur = parseInt(ideaDuration) || (durationMode === 'weeks' ? 4 : 30);
     const duration = durationMode === 'weeks' ? rawDur * 7 : rawDur;
@@ -361,27 +493,16 @@ export default function StudentDashboard() {
       uploadedFiles: uploadedFiles.map(f => ({ name: f.name, size: f.size, type: f.type, uploadedAt: f.uploadedAt })),
       status: 'pending_review',
       submittedAt: new Date().toISOString(),
+      student_email: email,
     };
 
-    let updatedProjects = [...projects];
-    if (editingIndex !== null) {
-      updatedProjects[editingIndex] = {
-        ...updatedProjects[editingIndex],
-        ...proj,
-        submittedAt: updatedProjects[editingIndex].submittedAt || proj.submittedAt
-      };
-    } else {
-      updatedProjects.unshift(proj);
-    }
-
-    Store.set('projects', updatedProjects);
-    Store.set('project', updatedProjects[0]);
-
-    // Send to backend
-    const studentId = Store.get('studentId');
-    if (studentId) {
-      submitIdeaToBackend({
-        student_id: studentId,
+    // Send to backend attached to student email
+    let backendIdeaId = null;
+    try {
+      const res = await submitIdeaToBackend({
+        student_id: user?.id || user?.studentId || email,
+        student_email: email,
+        user_email: email,
         title: proj.title,
         desc: proj.desc,
         domain: proj.domain,
@@ -392,48 +513,64 @@ export default function StudentDashboard() {
         refLink: proj.refLink,
         features: proj.features,
         uploadedFiles: proj.uploadedFiles
-      }).catch(err => console.error('Backend submission failed:', err));
+      });
+      if (res && res.idea_id) {
+        backendIdeaId = res.idea_id;
+        proj.id = res.idea_id;
+        proj.idea_id = res.idea_id;
+      }
+    } catch (err) {
+      console.error('Backend submission failed, saving locally:', err);
     }
+
+    let updatedProjects = email ? Store.getUserProjects(email) : [...projects];
+    if (editingIndex !== null) {
+      updatedProjects[editingIndex] = {
+        ...updatedProjects[editingIndex],
+        ...proj,
+        submittedAt: updatedProjects[editingIndex].submittedAt || proj.submittedAt
+      };
+    } else {
+      updatedProjects.unshift(proj);
+    }
+
+    if (email) {
+      Store.setUserProjects(email, updatedProjects);
+    }
+    setProjects(updatedProjects);
+    updateStats(updatedProjects);
 
     setIsSubmitting(false);
     closeIdeaModal();
-    loadProjects();
-    showToast('Idea submitted! Evaluating with AI Feasibility Agent...', '🚀');
     handleCheckFeasibility({ ...proj, rawFiles: uploadedFiles }, 0);
   };
 
+  const handleDeleteProject = async (pIdx, e) => {
+    if (e) e.stopPropagation();
+    const projToDelete = projects[pIdx];
+    if (!projToDelete) return;
+    if (!window.confirm(`Are you sure you want to delete "${projToDelete.title}"?`)) return;
 
-  const handleToggleTask = (projectIndex, milestoneIndex, taskId) => {
-    const updated = [...projects];
-    const targetProj = updated[projectIndex];
-    if (!targetProj || !targetProj.milestones) return;
-
-    const ms = targetProj.milestones[milestoneIndex];
-    if (!ms || !ms.tasks) return;
-
-    ms.tasks = ms.tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t);
-
-    // If all tasks are completed, mark milestone done
-    const allDone = ms.tasks.length > 0 && ms.tasks.every(t => t.completed);
-    if (allDone) {
-      ms.status = 'done';
-    } else if (ms.tasks.some(t => t.completed)) {
-      ms.status = 'in_progress';
-    }
-
-    const doneCount = targetProj.milestones.filter(m => m.status === 'done' || (m.tasks && m.tasks.every(t => t.completed))).length;
-    targetProj.milestonesDone = doneCount;
-
-    if (targetProj.blueprint) {
-      targetProj.blueprint.milestonePlan = targetProj.milestones;
-    }
-
-    Store.set('projects', updated);
-    Store.set('project', updated[0]);
+    const user = Store.get('currentUser');
+    const email = (user?.email || '').trim().toLowerCase();
+    const updated = projects.filter((_, idx) => idx !== pIdx);
     setProjects(updated);
-    loadProjects(profile);
-    showToast('Task status updated!', '✓');
+    if (email) {
+      Store.setUserProjects(email, updated);
+    }
+    updateStats(updated);
+
+    const ideaId = projToDelete.id || projToDelete.idea_id;
+    if (ideaId) {
+      try {
+        await deleteIdeaInBackend(ideaId);
+      } catch (err) {
+        console.warn('Backend delete failed:', err);
+      }
+    }
+    showToast('Project deleted successfully.', '🗑️');
   };
+
 
   const startVoiceRecord = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -470,7 +607,7 @@ export default function StudentDashboard() {
       };
 
       recognition.start();
-    } catch (err) {
+    } catch {
       setIsListening(false);
       showToast('Could not start voice recognition', '⚠️');
     }
@@ -485,42 +622,50 @@ export default function StudentDashboard() {
     setMessages(newMsgs);
     setChatInput('');
 
-    // Generate intelligent mentor response leveraging Milestone 2 agent blueprints
+    // Generate intelligent mentor response only for BUILT agents
     setTimeout(() => {
       const q = userMsg.text.toLowerCase();
-      let reply = "I recommend breaking down this task into smaller components and reviewing the milestone deliverables.";
-      
+      let reply = '';
+
       const currentProj = projects[0];
 
-      if (q.includes('stack') || q.includes('technology') || q.includes('framework')) {
-        if (currentProj?.blueprint?.techStackReport) {
-          const s = currentProj.blueprint.techStackReport.stack;
-          reply = `For your project, our Tech Stack Agent recommends: Frontend: ${s.frontend.name}, Backend: ${s.backend.name}, Database: ${s.database.name}. Why? ${s.backend.reason}`;
+      if (q.includes('feasibility') || q.includes('score') || q.includes('viable')) {
+        // ✅ BUILT — Feasibility Agent
+        if (currentProj?.feasibilityReport) {
+          const r = currentProj.feasibilityReport;
+          reply = `Your project's feasibility score is ${r.overallScore}% — Verdict: "${r.verdict}". ` +
+            `Technical: ${r.metrics?.technical}%, Timeline: ${r.metrics?.timeline}%, ` +
+            `Resources: ${r.metrics?.resource}%, Skill-Match: ${r.metrics?.skillMatch}%. ` +
+            (r.strengths?.length ? `Top strength: ${r.strengths[0]}` : '');
         } else {
-          reply = "For your chosen domain, I recommend using a REST/GraphQL API with a relational or document DB (e.g. PostgreSQL or MongoDB) and a component-driven frontend like React.";
+          reply = 'Run the AI Feasibility Check on your project card first to get a score!';
         }
-      } else if (q.includes('scope') || q.includes('mvp') || q.includes('boundary')) {
-        if (currentProj?.blueprint?.scope) {
-          reply = `Our Scope Definition Agent isolated your core MVP: "${currentProj.blueprint.scope.inScope.slice(0, 2).join('; ')}". Features like multi-cloud scaling have been pushed to Phase 2 to prevent scope creep.`;
+      } else if (q.includes('scope') || q.includes('mvp') || q.includes('boundary') || q.includes('in scope') || q.includes('out of scope')) {
+        // ✅ BUILT — Scope Agent
+        if (currentProj?.scopeReport) {
+          const s = currentProj.scopeReport;
+          reply = `Scope Definition is ready! Problem: "${s.problemStatement?.slice(0, 120)}...". ` +
+            `In Scope: ${s.inScope?.slice(0, 2).join('; ')}. ` +
+            `Out of Scope: ${s.outOfScope?.slice(0, 1).join('; ')}. Click "View Scope Report" on your project card for the full breakdown.`;
         } else {
-          reply = "Keep your initial scope strictly focused on core CRUD and primary user journeys. Don't add secondary features until your core endpoints pass unit tests.";
+          reply = 'Run the AI Scope Agent on your project card to get a scope definition!';
         }
+      } else if (q.includes('stack') || q.includes('technology') || q.includes('framework')) {
+        // 🔲 NOT YET BUILT — Tech Stack Agent
+        reply = '';
       } else if (q.includes('risk') || q.includes('problem') || q.includes('delay')) {
-        if (currentProj?.blueprint?.riskReport) {
-          const r = currentProj.blueprint.riskReport[0];
-          reply = `Primary Risk Identified: "${r.title}". AI Mitigation Strategy: ${r.mitigation}`;
-        } else {
-          reply = "The main risk for academic projects is timeline slippage during database and third-party API integration. Freeze your architecture by Week 2.";
-        }
-      } else if (q.includes('milestone') || q.includes('timeline') || q.includes('deadline')) {
-        reply = `You have completed ${stats.done} of ${stats.total} milestones. Check off weekly checklist items on your project card to automatically update your progress!`;
-      } else if (q.includes('feasibility') || q.includes('score')) {
-        reply = `Your project feasibility score is ${stats.feasibility}. This is based on technical complexity, time viability, resource availability, and your verified skill profile!`;
+        // 🔲 NOT YET BUILT — Risk Agent
+        reply = '';
+      } else if (q.includes('milestone') || q.includes('timeline') || q.includes('deadline') || q.includes('plan')) {
+        // 🔲 NOT YET BUILT — Milestone/Blueprint Agent
+        reply = '';
       } else {
-        reply = `Regarding "${userMsg.text}": I recommend checking your project blueprint for the specific phase deliverable and discussing this in your next mentor sync!`;
+        reply = '';
       }
 
-      setMessages(prev => [...prev, { role: 'ai', text: reply, time: new Date().toISOString() }]);
+      if (reply) {
+        setMessages(prev => [...prev, { role: 'ai', text: reply, time: new Date().toISOString() }]);
+      }
     }, 700);
   };
 
@@ -535,7 +680,8 @@ export default function StudentDashboard() {
 
   return (
     <>
-      <Navbar onOpenSubmitModal={() => openIdeaModal()} />
+      <Navbar onOpenSubmitModal={() => openIdeaModal()} onOpenChat={scrollToChat} />
+      <ChatbotPanel />
       <div className="page-bg-glow"></div>
       <div className="page-bg-glow-2"></div>
 
@@ -613,6 +759,27 @@ export default function StudentDashboard() {
                 </button>
               </div>
 
+              {/* Agent Pipeline Overview Bar */}
+              {projects.length > 0 && (
+                <div className="agent-pipeline-bar animate-fade-up" style={{ marginBottom: '1rem' }}>
+                  {[
+                    { icon: '📊', name: 'Feasibility', status: projects[0]?.feasibilityReport ? 'done' : 'active', txt: projects[0]?.feasibilityReport ? `${projects[0].feasibilityReport.overallScore}%` : 'Ready' },
+                    { icon: '📐', name: 'Scope', status: projects[0]?.scopeReport ? 'done' : projects[0]?.feasibilityReport ? 'active' : 'pending', txt: projects[0]?.scopeReport ? 'Complete' : 'Ready' },
+                    { icon: '🛠️', name: 'Tech Stack', status: 'pending', txt: 'Coming Soon' },
+                    { icon: '⚠️', name: 'Risk', status: 'pending', txt: 'Coming Soon' },
+                    { icon: '🗺️', name: 'Blueprint', status: 'pending', txt: 'Coming Soon' },
+                  ].map((step, i) => (
+                    <div className="pipeline-step" key={i}>
+                      <div className={`pipeline-dot ${step.status}`}>{step.icon}</div>
+                      <div className="pipeline-info">
+                        <div className="pipeline-name">{step.name}</div>
+                        <div className="pipeline-status-txt">{step.txt}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {projects.length === 0 ? (
                 <div className="empty-project animate-fade-up delay-2">
                   <div className="empty-project-icon">💡</div>
@@ -656,6 +823,9 @@ export default function StudentDashboard() {
                         <button className="btn btn-secondary btn-sm" onClick={() => openIdeaModal(pIdx)} title="Edit project">
                           ✏️
                         </button>
+                        <button className="btn btn-secondary btn-sm" onClick={(e) => handleDeleteProject(pIdx, e)} title="Delete project" style={{ color: '#ef4444' }}>
+                          🗑️
+                        </button>
                       </div>
                     </div>
 
@@ -685,42 +855,170 @@ export default function StudentDashboard() {
                       </div>
                     )}
 
-                    {/* Action buttons for AI Feasibility Report */}
-                    {proj.feasibilityReport ? (
-                      <div style={{ display: 'flex', gap: '0.6rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-                        <button 
-                          type="button" 
-                          className="btn btn-primary btn-sm" 
-                          onClick={() => { setSelectedReport(proj.feasibilityReport); setSelectedProject(proj); setIsReportModalOpen(true); }}
-                          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                        >
-                          📊 View AI Feasibility Report
-                        </button>
-                        <button 
-                          type="button" 
-                          className="btn btn-secondary btn-sm" 
-                          onClick={() => handleCheckFeasibility(proj, pIdx)}
-                          disabled={analyzingProjectTitle === proj.title}
-                        >
-                          {analyzingProjectTitle === proj.title ? '⏳ Analyzing with AI...' : '🔄 Re-run AI Check'}
-                        </button>
+                    {/* ══════════════════════════════════
+                        AI AGENT PIPELINE PANEL
+                        ══════════════════════════════════ */}
+                    <div className="agent-panel">
+                      <div className="agent-panel-title">
+                        ⚡ AI Agent Pipeline
                       </div>
-                    ) : (
-                      <div style={{ marginTop: '1rem', display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <button 
-                          type="button" 
-                          className="btn btn-primary btn-sm" 
-                          onClick={() => handleCheckFeasibility(proj, pIdx)}
-                          disabled={analyzingProjectTitle === proj.title}
-                          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                      <div className="agent-grid">
+
+                        {/* ── 1. FEASIBILITY AGENT ✅ Built ── */}
+                        <div
+                          className={`agent-card feasibility built ${analyzingProjectTitle === proj.title ? 'running' : ''}`}
+                          onClick={() => {
+                            if (analyzingProjectTitle === proj.title) return;
+                            if (proj.feasibilityReport) {
+                              setSelectedReport(proj.feasibilityReport);
+                              setSelectedProject(proj);
+                              setIsReportModalOpen(true);
+                            } else {
+                              handleCheckFeasibility(proj, pIdx);
+                            }
+                          }}
                         >
-                          {analyzingProjectTitle === proj.title ? '⏳ CrewAI Evaluating with Groq...' : '🤖 Run AI Feasibility Check (CrewAI)'}
-                        </button>
-                        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                          Live evaluation using Groq LLM &amp; document analysis
-                        </span>
+                          <div className="agent-card-top">
+                            <div className="agent-icon blue">
+                              {analyzingProjectTitle === proj.title ? <span className="agent-spin">⚙️</span> : '📊'}
+                            </div>
+                            <div className="agent-name">
+                              Feasibility Agent
+                              <div className="agent-subtext">Technical · Timeline · Skills</div>
+                            </div>
+                            <span className={`agent-status-pill ${analyzingProjectTitle === proj.title ? 'running' : proj.feasibilityReport ? 'done' : 'ready'}`}>
+                              {analyzingProjectTitle === proj.title ? 'Running' : proj.feasibilityReport ? 'Done' : 'Ready'}
+                            </span>
+                          </div>
+
+                          {proj.feasibilityReport && (
+                            <>
+                              <div className="agent-score-row">
+                                <div className="agent-score-bar-wrap">
+                                  <div
+                                    className={`agent-score-bar ${proj.feasibilityReport.overallScore >= 80 ? 'green' : proj.feasibilityReport.overallScore >= 65 ? 'amber' : 'red'}`}
+                                    style={{ width: `${proj.feasibilityReport.overallScore}%` }}
+                                  />
+                                </div>
+                                <span className="agent-score-val">{proj.feasibilityReport.overallScore}%</span>
+                              </div>
+                              <div className="agent-verdict-text">
+                                {proj.feasibilityReport.verdict}
+                              </div>
+                            </>
+                          )}
+
+                          <div className="agent-card-actions" onClick={e => e.stopPropagation()}>
+                            {proj.feasibilityReport ? (
+                              <>
+                                <button className="agent-btn agent-btn-primary" onClick={() => { setSelectedReport(proj.feasibilityReport); setSelectedProject(proj); setIsReportModalOpen(true); }}>
+                                  📋 View Report
+                                </button>
+                                <button className="agent-btn agent-btn-secondary" disabled={analyzingProjectTitle === proj.title} onClick={() => handleCheckFeasibility(proj, pIdx)}>
+                                  {analyzingProjectTitle === proj.title ? <><span className="agent-spin">⟳</span> Running</> : '🔄 Re-run'}
+                                </button>
+                              </>
+                            ) : (
+                              <button className="agent-btn agent-btn-primary" disabled={analyzingProjectTitle === proj.title} onClick={() => handleCheckFeasibility(proj, pIdx)}>
+                                {analyzingProjectTitle === proj.title ? <><span className="agent-spin">⟳</span> Analyzing…</> : '▶ Run Agent'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* ── 2. SCOPE AGENT ✅ Built ── */}
+                        <div
+                          className={`agent-card scope-def built ${scopingProjectTitle === proj.title ? 'running' : ''}`}
+                          onClick={() => {
+                            if (scopingProjectTitle === proj.title) return;
+                            if (proj.scopeReport) {
+                              setSelectedScopeReport(proj.scopeReport);
+                              setSelectedProject(proj);
+                              setIsScopeModalOpen(true);
+                            } else {
+                              handleRunScope(proj, pIdx);
+                            }
+                          }}
+                        >
+                          <div className="agent-card-top">
+                            <div className="agent-icon indigo">
+                              {scopingProjectTitle === proj.title ? <span className="agent-spin">⚙️</span> : '📐'}
+                            </div>
+                            <div className="agent-name">
+                              Scope Agent
+                              <div className="agent-subtext">Boundaries · MVP · Deliverables</div>
+                            </div>
+                            <span className={`agent-status-pill ${scopingProjectTitle === proj.title ? 'running' : proj.scopeReport ? 'done' : 'ready'}`}>
+                              {scopingProjectTitle === proj.title ? 'Running' : proj.scopeReport ? 'Done' : 'Ready'}
+                            </span>
+                          </div>
+
+                          {proj.scopeReport && (
+                            <div className="agent-verdict-text">
+                              {proj.scopeReport.problemStatement?.slice(0, 90)}{proj.scopeReport.problemStatement?.length > 90 ? '…' : ''}
+                            </div>
+                          )}
+
+                          <div className="agent-card-actions" onClick={e => e.stopPropagation()}>
+                            {proj.scopeReport ? (
+                              <>
+                                <button className="agent-btn agent-btn-indigo" onClick={() => { setSelectedScopeReport(proj.scopeReport); setSelectedProject(proj); setIsScopeModalOpen(true); }}>
+                                  📋 View Report
+                                </button>
+                                <button className="agent-btn agent-btn-secondary" disabled={scopingProjectTitle === proj.title} onClick={() => handleRunScope(proj, pIdx)}>
+                                  {scopingProjectTitle === proj.title ? <><span className="agent-spin">⟳</span> Running</> : '🔄 Re-run'}
+                                </button>
+                              </>
+                            ) : (
+                              <button className="agent-btn agent-btn-indigo" disabled={scopingProjectTitle === proj.title} onClick={() => handleRunScope(proj, pIdx)}>
+                                {scopingProjectTitle === proj.title ? <><span className="agent-spin">⟳</span> Defining…</> : '▶ Run Agent'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* ── 3. TECH STACK AGENT 🔲 Coming Soon ── */}
+                        <div className="agent-card coming-soon">
+                          <div className="agent-card-top">
+                            <div className="agent-icon amber">🛠️</div>
+                            <div className="agent-name">
+                              Tech Stack Agent
+                              <div className="agent-subtext">Framework · DB · APIs</div>
+                            </div>
+                            <span className="agent-status-pill soon">Soon</span>
+                          </div>
+                          <div className="agent-lock">🔒 Not yet built</div>
+                        </div>
+
+                        {/* ── 4. RISK AGENT 🔲 Coming Soon ── */}
+                        <div className="agent-card coming-soon">
+                          <div className="agent-card-top">
+                            <div className="agent-icon rose">⚠️</div>
+                            <div className="agent-name">
+                              Risk Agent
+                              <div className="agent-subtext">Risks · Mitigations</div>
+                            </div>
+                            <span className="agent-status-pill soon">Soon</span>
+                          </div>
+                          <div className="agent-lock">🔒 Not yet built</div>
+                        </div>
+
+                        {/* ── 5. MILESTONE AGENT 🔲 Coming Soon ── */}
+                        <div className="agent-card coming-soon">
+                          <div className="agent-card-top">
+                            <div className="agent-icon teal">🗺️</div>
+                            <div className="agent-name">
+                              Blueprint Agent
+                              <div className="agent-subtext">Milestones · Sprint Plan</div>
+                            </div>
+                            <span className="agent-status-pill soon">Soon</span>
+                          </div>
+                          <div className="agent-lock">🔒 Not yet built</div>
+                        </div>
+
                       </div>
-                    )}
+                    </div>
+
                   </div>
                 ))
               )}
@@ -1104,6 +1402,14 @@ export default function StudentDashboard() {
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         report={selectedReport}
+        project={selectedProject}
+      />
+
+      {/* Real AI Scope Definition Report Modal */}
+      <ScopeReportModal
+        isOpen={isScopeModalOpen}
+        onClose={() => setIsScopeModalOpen(false)}
+        report={selectedScopeReport}
         project={selectedProject}
       />
     </>

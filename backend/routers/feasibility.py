@@ -111,12 +111,40 @@ def _persist_report(data: schemas.FeasibilityRequest, report: dict) -> Optional[
                 upsert=True,
             )
             inserted_id = str(result.upserted_id) if result.upserted_id else idea_id
+            
+            # Also update the project_idea document with feasibility results
+            try:
+                ideas_col.update_one(
+                    {"_id": idea_doc["_id"]},
+                    {"$set": {
+                        "feasibility": report.get("overallScore"),
+                        "feasibilityReport": report,
+                        "status": "reviewed",
+                    }}
+                )
+            except Exception:
+                pass
         else:
             # No linked idea — insert a standalone report
             result = reports_col.insert_one(report_doc)
             inserted_id = str(result.inserted_id)
 
         print(f"[FEASIBILITY] Report saved to MongoDB (id={inserted_id}, score={report.get('overallScore')})")
+
+        # Also update local ideas.json if matching title or idea_id
+        try:
+            from routers.submission import _load_local_ideas, _save_local_ideas
+            local_ideas = _load_local_ideas()
+            for i_id, i_doc in local_ideas.items():
+                if (data.idea_id and i_id == data.idea_id) or (i_doc.get("title") == data.title):
+                    i_doc["feasibility"] = report.get("overallScore")
+                    i_doc["feasibilityReport"] = report
+                    i_doc["status"] = "reviewed"
+                    break
+            _save_local_ideas(local_ideas)
+        except Exception as e:
+            print(f"[FEASIBILITY] Notice: could not update local ideas.json: {e}")
+
         return inserted_id
 
     except Exception as exc:

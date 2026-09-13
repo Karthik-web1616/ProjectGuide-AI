@@ -12,10 +12,17 @@ export default function Landing() {
     if (user && user.loggedIn) {
       if (user.role === 'faculty') {
         navigate('/faculty-dashboard');
-      } else if (!profile || !profile.skills || Object.keys(profile.skills).length === 0) {
-        navigate('/profile');
       } else {
-        navigate('/dashboard');
+        const hasCompleted = Boolean(
+          user.hasCompletedProfile ||
+          profile?.hasCompletedProfile ||
+          (profile?.skills && Object.keys(profile.skills).length > 0)
+        );
+        if (hasCompleted) {
+          navigate('/dashboard');
+        } else {
+          navigate('/profile');
+        }
       }
     } else {
       navigate('/login');

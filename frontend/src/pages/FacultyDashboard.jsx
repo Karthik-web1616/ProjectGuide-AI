@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
+import ChatbotPanel from '../components/ChatbotPanel';
 import FeasibilityReportModal from '../components/FeasibilityReportModal';
 import { Store, fmtRelative } from '../utils/store';
 import { showToast } from '../utils/toast';
 import { SKILLS, LEVEL_LABELS } from '../utils/constants';
-import { fetchFeasibilityReport } from '../utils/api';
+import { fetchFeasibilityReport, fetchUserIdeas } from '../utils/api';
 
 const STUDENTS_MOCK = [
   {
@@ -208,26 +209,43 @@ export default function FacultyDashboard() {
     }
     setUser(currentUser);
 
-    // Merge any live student projects created in this session into Arjun Sharma (Student 1)
-    const liveProfile = Store.get('profile');
-    const liveProjects = Store.get('projects');
-    if (liveProfile && liveProjects && liveProjects.length > 0) {
-      setStudents(prev => prev.map(s => {
-        if (s.id === 1) {
-          return {
-            ...s,
-            name: liveProfile.name || s.name,
-            roll: liveProfile.rollNo || s.roll,
-            branch: liveProfile.branch || s.branch,
-            projects: liveProjects,
-            project: liveProjects[0],
-            skills: liveProfile.skills || s.skills,
-            status: 'active'
-          };
-        }
-        return s;
-      }));
-    }
+    // Load all submitted project ideas across the cohort from backend
+    fetchUserIdeas().then(allIdeas => {
+      if (Array.isArray(allIdeas) && allIdeas.length > 0) {
+        // Group submitted ideas by student email
+        const ideasByEmail = {};
+        allIdeas.forEach(idea => {
+          const email = (idea.student_email || '').toLowerCase();
+          if (email) {
+            if (!ideasByEmail[email]) ideasByEmail[email] = [];
+            ideasByEmail[email].push({
+              title: idea.title,
+              domain: idea.domain,
+              techStack: idea.tech_ideas ? idea.tech_ideas.split(',').map(t => t.trim()) : [],
+              feasibility: idea.feasibility || (idea.feasibilityReport ? idea.feasibilityReport.overallScore : null),
+              feasibilityReport: idea.feasibilityReport || idea.feasibility_report,
+              scopeReport: idea.scopeReport || idea.scope_report,
+              desc: idea.desc,
+              submittedAt: idea.created_at || idea.submittedAt
+            });
+          }
+        });
+
+        setStudents(prev => prev.map(s => {
+          const studentEmail = (s.email || '').toLowerCase();
+          if (ideasByEmail[studentEmail]) {
+            const studentProjs = ideasByEmail[studentEmail];
+            return {
+              ...s,
+              projects: studentProjs,
+              project: studentProjs[0],
+              status: 'active'
+            };
+          }
+          return s;
+        }));
+      }
+    }).catch(err => console.log('Faculty ideas fetch:', err));
   }, [navigate]);
 
   const filteredStudents = students.filter(s => {
@@ -312,6 +330,7 @@ export default function FacultyDashboard() {
   return (
     <>
       <Navbar />
+      <ChatbotPanel />
       <div className="page-bg-glow"></div>
       <div className="page-bg-glow-2"></div>
 

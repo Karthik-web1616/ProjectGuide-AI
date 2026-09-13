@@ -18,6 +18,7 @@ from bson import ObjectId
 STUDENTS_COLLECTION = "students"
 PROJECT_IDEAS_COLLECTION = "project_ideas"
 FEASIBILITY_REPORTS_COLLECTION = "feasibility_reports"
+SCOPE_REPORTS_COLLECTION = "scope_reports"
 
 
 # ---------------------------------------------------------------------------
@@ -72,8 +73,10 @@ def make_project_idea_doc(data) -> dict:
     except AttributeError:
         uploaded_files = [f.dict() for f in data.uploadedFiles]
 
+    student_email = getattr(data, 'student_email', '') or getattr(data, 'user_email', '') or ''
     return {
         "student_id": str(data.student_id),
+        "student_email": str(student_email).strip().lower(),
         "title": data.title,
         "desc": data.desc,
         "domain": data.domain or "web",
@@ -81,7 +84,7 @@ def make_project_idea_doc(data) -> dict:
         "duration_days": data.durationDays or 30,
         "duration_unit": data.durationUnit or "days",
         "tech_ideas": data.techIdeas or "",
-        "ref_link": data.refLink or "",
+        "refLink": data.refLink or "",
         "features": data.features or [],
         "uploaded_files": uploaded_files,
         "status": "pending_review",
@@ -109,4 +112,39 @@ def make_feasibility_report_doc(idea_id: str, student_id: str, report: dict) -> 
         "files_analyzed": report.get("filesAnalyzed", []),
         "ai_generated": report.get("aiGenerated", False),
         "created_at": now_utc(),
+    }
+
+
+def make_scope_report_doc(idea_id: str, student_id: str, report: dict, meta: dict = None) -> dict:
+    """
+    Build a scope_report document ready for MongoDB insertion.
+
+    Args:
+        idea_id:    The _id string of the project_idea that was analysed.
+        student_id: The _id string of the student who owns the idea.
+        report:     The structured report dict returned by run_scope_agent().
+        meta:       Optional extra context (title, desc, domain, etc.) from the request.
+    """
+    meta = meta or {}
+    return {
+        "idea_id": idea_id,
+        "student_id": student_id,
+        # Scope content fields
+        "problem_statement": report.get("problemStatement", ""),
+        "objectives": report.get("objectives", []),
+        "in_scope": report.get("inScope", []),
+        "out_of_scope": report.get("outOfScope", []),
+        "target_users": report.get("targetUsers", ""),
+        "key_deliverables": report.get("keyDeliverables", []),
+        "assumptions": report.get("assumptions", []),
+        "constraints": report.get("constraints", []),
+        "ai_generated": report.get("aiGenerated", False),
+        # Request metadata for traceability
+        "project_title": meta.get("title", ""),
+        "project_desc": meta.get("desc", ""),
+        "domain": meta.get("domain", ""),
+        "team_size": meta.get("teamSize", ""),
+        "duration_days": meta.get("durationDays", 0),
+        "tech_ideas": meta.get("techIdeas", ""),
+        "updated_at": now_utc(),
     }

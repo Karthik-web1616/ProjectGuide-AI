@@ -1,10 +1,12 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 
-# Load environment variables from .env
-load_dotenv()
+# Load environment variables from .env explicitly
+_env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=_env_path)
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://<username>:<password>@cluster0.mongodb.net/?retryWrites=true&w=majority")
 DB_NAME = os.getenv("DB_NAME", "ProjectGuide-AI")
@@ -16,9 +18,25 @@ db = None
 def get_database():
     global client, db
     if db is None:
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        try:
+            import certifi
+            client = MongoClient(
+                MONGO_URI,
+                serverSelectionTimeoutMS=2000,
+                connectTimeoutMS=2000,
+                tlsCAFile=certifi.where()
+            )
+        except Exception:
+            client = MongoClient(
+                MONGO_URI,
+                serverSelectionTimeoutMS=2000,
+                connectTimeoutMS=2000
+            )
         db = client[DB_NAME]
-        _ensure_indexes(db)
+        try:
+            _ensure_indexes(db)
+        except Exception as e:
+            print(f"[DB] Notice: Could not ensure indexes on MongoDB Atlas: {e}")
     return db
 
 
@@ -50,6 +68,16 @@ def _ensure_indexes(database):
         name="reports_student_id_idx",
     )
 
+    # scope_reports: one per idea, same indexing pattern as feasibility_reports
+    database["scope_reports"].create_index(
+        [("idea_id", ASCENDING)],
+        name="scope_idea_id_idx",
+    )
+    database["scope_reports"].create_index(
+        [("student_id", ASCENDING)],
+        name="scope_student_id_idx",
+    )
+
 
 def check_db_connection():
     """Utility to test whether the MongoDB connection is alive."""
@@ -78,3 +106,7 @@ def get_project_ideas_collection():
 
 def get_feasibility_reports_collection():
     return get_database()["feasibility_reports"]
+
+
+def get_scope_reports_collection():
+    return get_database()["scope_reports"]

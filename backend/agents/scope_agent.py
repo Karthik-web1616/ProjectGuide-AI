@@ -66,12 +66,38 @@ def _parse_json_from_text(text: str) -> dict:
     return {}
 
 
+def _heuristic_scope_score(idea_data: dict) -> dict:
+    """Compute a simple heuristic scope score when LLM is unavailable."""
+    duration = int(idea_data.get("durationDays") or 30)
+    team = int(idea_data.get("teamSize") or 3)
+    desc = idea_data.get("desc") or ""
+    features = idea_data.get("features") or []
+
+    clarity       = min(100, 50 + len(desc) // 10)
+    scope_control = min(100, 55 + min(len(features), 5) * 5)
+    achievability = min(100, 40 + min(duration // 10, 30) + min(team * 5, 20))
+    completeness  = 60  # fallback: generic content
+
+    overall = round((clarity + scope_control + achievability + completeness) / 4)
+    return {
+        "overallScore": overall,
+        "metrics": {
+            "clarity": clarity,
+            "scopeControl": scope_control,
+            "achievability": achievability,
+            "completeness": completeness,
+        },
+    }
+
+
 def _build_fallback_report(idea_data: dict) -> dict:
     title = idea_data.get("title") or "Untitled Project"
     domain = (idea_data.get("domain") or "web").lower()
     desc = idea_data.get("desc") or ""
+    scores = _heuristic_scope_score(idea_data)
 
     return {
+        **scores,
         "problemStatement": (
             f"{title} aims to address common challenges faced by users in the "
             f"{domain.upper()} space, based on the submitted description: "
@@ -198,7 +224,13 @@ You MUST respond with ONLY a valid JSON object (no extra text, no markdown) with
   "targetUsers": "<who this project is built for>",
   "keyDeliverables": ["<deliverable 1>", "<deliverable 2>"],
   "assumptions": ["<assumption 1>", "<assumption 2>"],
-  "constraints": ["<constraint 1>", "<constraint 2>"]
+  "constraints": ["<constraint 1>", "<constraint 2>"],
+  "metrics": {{
+    "clarity": <integer 0-100: how precisely the problem statement is defined>,
+    "scopeControl": <integer 0-100: how well scope creep is prevented by the out-of-scope list>,
+    "achievability": <integer 0-100: how realistic this scope is for {team_size} students in {duration_days} days>,
+    "completeness": <integer 0-100: how complete and specific all sections are>
+  }}
 }}
 
 GUIDELINES:
@@ -231,7 +263,22 @@ GUIDELINES:
         parsed = _parse_json_from_text(result_text)
 
         if parsed and "problemStatement" in parsed:
+            # Compute overallScore from LLM-returned metrics
+            raw_metrics = parsed.get("metrics") or {}
+            clarity       = int(raw_metrics.get("clarity",       75))
+            scope_control = int(raw_metrics.get("scopeControl",  75))
+            achievability = int(raw_metrics.get("achievability", 75))
+            completeness  = int(raw_metrics.get("completeness",  75))
+            overall_score = round((clarity + scope_control + achievability + completeness) / 4)
+
             report = {
+                "overallScore": overall_score,
+                "metrics": {
+                    "clarity":       clarity,
+                    "scopeControl":  scope_control,
+                    "achievability": achievability,
+                    "completeness":  completeness,
+                },
                 "problemStatement": parsed.get("problemStatement", ""),
                 "objectives": parsed.get("objectives", []),
                 "inScope": parsed.get("inScope", []),
