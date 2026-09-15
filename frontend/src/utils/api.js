@@ -50,6 +50,11 @@ export async function fetchScopeReport(payload) {
   return postJSON('/api/scope-definition', payload);
 }
 
+// Agent 3: Tech Stack — requires feasibilityReport + scopeReport in payload (chaining)
+export async function fetchTechStackReport(payload) {
+  return postJSON('/api/tech-stack', payload);
+}
+
 export async function fetchUserIdeas(email) {
   const url = email ? `${API_BASE}/api/ideas?email=${encodeURIComponent(email)}` : `${API_BASE}/api/ideas`;
   const res = await fetch(url);

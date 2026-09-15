@@ -29,9 +29,10 @@ except Exception:
 
 def _get_llm():
     """Create the Groq-backed LLM for CrewAI using native LLM class."""
-    api_key = os.getenv("GROQ_API_KEY")
+    # Use dedicated scope-agent key if available, fall back to shared key
+    api_key = os.getenv("GROQ_API_KEY_SCOPE") or os.getenv("GROQ_API_KEY")
     if not api_key:
-        raise ValueError("GROQ_API_KEY not found in environment variables")
+        raise ValueError("GROQ_API_KEY_SCOPE (or GROQ_API_KEY) not found in environment variables")
 
     from crewai import LLM
 
@@ -140,9 +141,11 @@ def run_scope_agent(
     idea_data: dict,
     student_skills: dict = None,
     uploaded_files: list = None,
+    feasibility_report: dict = None,  # Agent chaining: output from Feasibility Agent (Agent 1)
 ) -> dict:
     student_skills = student_skills or {}
     uploaded_files = uploaded_files or []
+    feasibility_report = feasibility_report or {}
 
     file_context = extract_text_from_files(uploaded_files)
 
@@ -197,6 +200,23 @@ def run_scope_agent(
         else "\n\nNo reference documents uploaded."
     )
 
+    # Agent chaining: inject Feasibility Report from Agent 1 into this prompt
+    if feasibility_report and feasibility_report.get("overallScore") is not None:
+        feas_chain_section = (
+            f"\n\nAGENT 1 OUTPUT — FEASIBILITY REPORT (use this to refine scope boundaries):\n"
+            f"  Overall Score : {feasibility_report.get('overallScore')}%\n"
+            f"  Verdict       : {feasibility_report.get('verdict', 'N/A')}\n"
+            f"  Technical     : {feasibility_report.get('metrics', {}).get('technical', 'N/A')}%\n"
+            f"  Timeline      : {feasibility_report.get('metrics', {}).get('timeline', 'N/A')}%\n"
+            f"  Skill Match   : {feasibility_report.get('metrics', {}).get('skillMatch', 'N/A')}%\n"
+            f"  Bottlenecks   :\n" +
+            "\n".join(f"    - {b}" for b in feasibility_report.get("bottlenecks", [])) + "\n"
+            f"  Key Guidance  : Ensure the scope you define directly addresses the "
+            f"feasibility bottlenecks listed above."
+        )
+    else:
+        feas_chain_section = "\n\nAGENT 1 OUTPUT — FEASIBILITY REPORT: Not yet available."
+
     task_description = f"""
 Define a clear, bounded scope for the following student academic project idea.
 
@@ -213,6 +233,7 @@ PROJECT DETAILS:
 STUDENT SKILL PROFILE:
 {skills_text}
 {file_section}
+{feas_chain_section}
 
 INSTRUCTIONS:
 You MUST respond with ONLY a valid JSON object (no extra text, no markdown) with exactly this structure:
@@ -237,9 +258,11 @@ GUIDELINES:
 - The scope MUST be realistic for a team of {team_size} students within {duration_days} days.
 - "inScope" should list only what can genuinely be built in that time.
 - "outOfScope" must explicitly call out tempting features/extensions that should be deferred, so the team doesn't drift into scope creep.
+- If Agent 1 Feasibility Report is provided, ensure the scope directly addresses those bottlenecks.
 - Be specific and reference the actual project details — avoid generic filler.
 - If uploaded reference documents were provided, incorporate relevant details from them.
 """
+
 
     scope_task = Task(
         description=task_description,

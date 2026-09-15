@@ -49,7 +49,16 @@ def define_scope(data: schemas.ScopeRequest):
             idea_data=idea_data,
             student_skills=student_skills,
             uploaded_files=uploaded_files,
+            feasibility_report=data.feasibilityReport or {},  # Agent chaining
         )
+
+        # ------------------------------------------------------------------
+        # Agent chaining: embed the full Feasibility Report (Agent 1 output)
+        # inside the Scope Report response so the frontend and downstream
+        # agents (e.g. Tech Stack Agent) always receive both in one object.
+        # ------------------------------------------------------------------
+        if data.feasibilityReport:
+            report["feasibilityReport"] = data.feasibilityReport
 
         # ------------------------------------------------------------------
         # Persist the scope report to MongoDB

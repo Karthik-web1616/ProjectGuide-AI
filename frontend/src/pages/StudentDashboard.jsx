@@ -4,12 +4,14 @@ import Navbar from '../components/Navbar';
 import ChatbotPanel from '../components/ChatbotPanel';
 import FeasibilityReportModal from '../components/FeasibilityReportModal';
 import ScopeReportModal from '../components/ScopeReportModal';
+import TechStackReportModal from '../components/TechStackReportModal';
 import { Store, fmtDate } from '../utils/store';
 import { showToast } from '../utils/toast';
 import {
   submitIdeaToBackend,
   fetchFeasibilityReport,
   fetchScopeReport,
+  fetchTechStackReport,
   getUserProfile,
   fetchUserIdeas,
   updateIdeaInBackend,
@@ -36,6 +38,11 @@ export default function StudentDashboard() {
   const [selectedScopeReport, setSelectedScopeReport] = useState(null);
   const [isScopeModalOpen, setIsScopeModalOpen] = useState(false);
   const [scopingProjectTitle, setScopingProjectTitle] = useState(null);
+
+  // AI Tech Stack Agent State (Real CrewAI + Groq — Agent 3, chained)
+  const [selectedTechStackReport, setSelectedTechStackReport] = useState(null);
+  const [isTechStackModalOpen, setIsTechStackModalOpen] = useState(false);
+  const [techStackingProjectTitle, setTechStackingProjectTitle] = useState(null);
   
   // Idea Form State
   const [ideaTitle, setIdeaTitle] = useState('');
@@ -296,6 +303,8 @@ export default function StudentDashboard() {
         features: proj.features || [],
         studentSkills: profile?.skills || {},
         uploadedFiles: filesToSend,
+        // Agent chaining: pass Agent 1 output so backend embeds it in the response
+        feasibilityReport: proj.feasibilityReport || null,
       });
 
       // Persist scope to project
@@ -327,6 +336,74 @@ export default function StudentDashboard() {
       showToast('Scope agent failed. Is the backend running?', '❌');
     } finally {
       setScopingProjectTitle(null);
+    }
+  };
+
+  // ── Tech Stack Agent handler (Agent 3 — chained from Agent 1 + Agent 2) ──
+  const handleRunTechStack = async (proj, pIndex = null) => {
+    // Enforce chaining: both upstream reports must exist
+    if (!proj.feasibilityReport) {
+      showToast('Run Feasibility Agent first (Agent 1 required)', '⚠️');
+      return;
+    }
+    if (!proj.scopeReport) {
+      showToast('Run Scope Agent first (Agent 2 required)', '⚠️');
+      return;
+    }
+
+    const user = Store.get('currentUser');
+    const email = user?.email;
+    setTechStackingProjectTitle(proj.title);
+    try {
+      // Agent chaining: feasibilityReport is embedded inside scopeReport by the backend.
+      // Fall back to proj.feasibilityReport if the scope was run before this feature was added.
+      const chainedFeasReport = proj.scopeReport?.feasibilityReport || proj.feasibilityReport;
+
+      const techStackReport = await fetchTechStackReport({
+        title:            proj.title || 'Academic Project',
+        desc:             proj.desc || '',
+        domain:           (proj.domain || 'web').toLowerCase(),
+        teamSize:         String(proj.teamSize || 3),
+        durationDays:     parseInt(proj.durationDays) || 30,
+        techIdeas:        proj.techIdeas || '',
+        features:         proj.features || [],
+        studentSkills:    profile?.skills || {},
+        // Chain: Agent 1 output (from embedded scope or direct), Agent 2 output
+        feasibilityReport: chainedFeasReport,
+        scopeReport:       proj.scopeReport,
+      });
+
+      // Persist tech stack to project
+      let currentProjs = email ? Store.getUserProjects(email) : [...projects];
+      let targetIdx = pIndex;
+      if (targetIdx === null) {
+        targetIdx = currentProjs.findIndex(p => p.title === proj.title || (p.id && p.id === proj.id));
+      }
+      if (targetIdx !== -1 && targetIdx !== null && currentProjs[targetIdx]) {
+        currentProjs[targetIdx] = { ...currentProjs[targetIdx], techStackReport };
+      }
+      if (email) {
+        Store.setUserProjects(email, currentProjs);
+      }
+      setProjects(currentProjs);
+      updateStats(currentProjs);
+
+      // Persist to backend
+      const ideaId = proj.id || proj.idea_id;
+      if (ideaId) {
+        updateIdeaInBackend(ideaId, { techStackReport }).catch(err =>
+          console.warn('Tech stack sync failed:', err)
+        );
+      }
+
+      setSelectedTechStackReport(techStackReport);
+      setSelectedProject(proj);
+      setIsTechStackModalOpen(true);
+    } catch (err) {
+      console.error('Tech Stack agent failed:', err);
+      showToast('Tech Stack agent failed. Is the backend running?', '❌');
+    } finally {
+      setTechStackingProjectTitle(null);
     }
   };
   const handleAvatarUpload = (e) => {
@@ -765,7 +842,7 @@ export default function StudentDashboard() {
                   {[
                     { icon: '📊', name: 'Feasibility', status: projects[0]?.feasibilityReport ? 'done' : 'active', txt: projects[0]?.feasibilityReport ? `${projects[0].feasibilityReport.overallScore}%` : 'Ready' },
                     { icon: '📐', name: 'Scope', status: projects[0]?.scopeReport ? 'done' : projects[0]?.feasibilityReport ? 'active' : 'pending', txt: projects[0]?.scopeReport ? 'Complete' : 'Ready' },
-                    { icon: '🛠️', name: 'Tech Stack', status: 'pending', txt: 'Coming Soon' },
+                    { icon: '🛠️', name: 'Tech Stack', status: projects[0]?.techStackReport ? 'done' : projects[0]?.scopeReport ? 'active' : 'pending', txt: projects[0]?.techStackReport ? 'Complete' : projects[0]?.scopeReport ? 'Ready' : 'Locked' },
                     { icon: '⚠️', name: 'Risk', status: 'pending', txt: 'Coming Soon' },
                     { icon: '🗺️', name: 'Blueprint', status: 'pending', txt: 'Coming Soon' },
                   ].map((step, i) => (
@@ -977,17 +1054,84 @@ export default function StudentDashboard() {
                           </div>
                         </div>
 
-                        {/* ── 3. TECH STACK AGENT 🔲 Coming Soon ── */}
-                        <div className="agent-card coming-soon">
+                        {/* ── 3. TECH STACK AGENT ✅ Built (Agent 3 — chained) ── */}
+                        <div
+                          className={`agent-card tech-stack built ${techStackingProjectTitle === proj.title ? 'running' : ''}`}
+                          onClick={() => {
+                            if (techStackingProjectTitle === proj.title) return;
+                            if (proj.techStackReport) {
+                              setSelectedTechStackReport(proj.techStackReport);
+                              setSelectedProject(proj);
+                              setIsTechStackModalOpen(true);
+                            } else {
+                              handleRunTechStack(proj, pIdx);
+                            }
+                          }}
+                        >
                           <div className="agent-card-top">
-                            <div className="agent-icon amber">🛠️</div>
+                            <div className="agent-icon amber">
+                              {techStackingProjectTitle === proj.title ? <span className="agent-spin">⚙️</span> : '🛠️'}
+                            </div>
                             <div className="agent-name">
                               Tech Stack Agent
-                              <div className="agent-subtext">Framework · DB · APIs</div>
+                              <div className="agent-subtext">Framework · DB · APIs · Reasoning</div>
                             </div>
-                            <span className="agent-status-pill soon">Soon</span>
+                            <span className={`agent-status-pill ${
+                              techStackingProjectTitle === proj.title ? 'running' :
+                              proj.techStackReport ? 'done' :
+                              (!proj.feasibilityReport || !proj.scopeReport) ? 'locked' : 'ready'
+                            }`}>
+                              {techStackingProjectTitle === proj.title ? 'Running' :
+                               proj.techStackReport ? 'Done' :
+                               (!proj.feasibilityReport || !proj.scopeReport) ? '🔒 Locked' : 'Ready'}
+                            </span>
                           </div>
-                          <div className="agent-lock">🔒 Not yet built</div>
+
+                          {/* Chain indicator */}
+                          <div style={{
+                            fontSize: '0.68rem',
+                            color: (proj.feasibilityReport && proj.scopeReport) ? 'rgba(245,158,11,0.7)' : 'rgba(255,255,255,0.25)',
+                            marginBottom: '0.4rem',
+                            display: 'flex', alignItems: 'center', gap: '0.3rem'
+                          }}>
+                            <span>🔗</span>
+                            <span>
+                              {proj.feasibilityReport ? '✅' : '⬜'} Feasibility →&nbsp;
+                              {proj.scopeReport ? '✅' : '⬜'} Scope → Tech Stack
+                            </span>
+                          </div>
+
+                          {proj.techStackReport && (
+                            <div className="agent-verdict-text">
+                              ⚡ {proj.techStackReport.recommendedStack?.frontend} + {proj.techStackReport.recommendedStack?.backend}
+                            </div>
+                          )}
+
+                          <div className="agent-card-actions" onClick={e => e.stopPropagation()}>
+                            {proj.techStackReport ? (
+                              <>
+                                <button className="agent-btn agent-btn-amber" onClick={() => { setSelectedTechStackReport(proj.techStackReport); setSelectedProject(proj); setIsTechStackModalOpen(true); }}>
+                                  📋 View Report
+                                </button>
+                                <button className="agent-btn agent-btn-secondary" disabled={techStackingProjectTitle === proj.title} onClick={() => handleRunTechStack(proj, pIdx)}>
+                                  {techStackingProjectTitle === proj.title ? <><span className="agent-spin">⟳</span> Running</> : '🔄 Re-run'}
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                className="agent-btn agent-btn-amber"
+                                disabled={techStackingProjectTitle === proj.title || !proj.feasibilityReport || !proj.scopeReport}
+                                onClick={() => handleRunTechStack(proj, pIdx)}
+                                title={!proj.feasibilityReport ? 'Run Feasibility Agent first' : !proj.scopeReport ? 'Run Scope Agent first' : ''}
+                              >
+                                {techStackingProjectTitle === proj.title
+                                  ? <><span className="agent-spin">⟳</span> Analyzing…</>
+                                  : (!proj.feasibilityReport || !proj.scopeReport)
+                                    ? '🔒 Run prev. agents first'
+                                    : '▶ Run Agent'}
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {/* ── 4. RISK AGENT 🔲 Coming Soon ── */}
@@ -1412,6 +1556,15 @@ export default function StudentDashboard() {
         report={selectedScopeReport}
         project={selectedProject}
       />
+
+      {/* AI Tech Stack Recommendation Modal (Agent 3 — chained) */}
+      {isTechStackModalOpen && (
+        <TechStackReportModal
+          report={selectedTechStackReport}
+          project={selectedProject}
+          onClose={() => setIsTechStackModalOpen(false)}
+        />
+      )}
     </>
   );
 }

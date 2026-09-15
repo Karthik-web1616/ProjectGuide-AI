@@ -40,6 +40,8 @@ export default function ScopeReportModal({ isOpen, onClose, report, project }) {
     assumptions = [],
     constraints = [],
     aiGenerated = false,
+    // Agent chaining: feasibility report from Agent 1 embedded in the scope report
+    feasibilityReport = null,
   } = report;
 
   const title  = project?.title || 'Academic Project';
@@ -132,6 +134,48 @@ export default function ScopeReportModal({ isOpen, onClose, report, project }) {
 
         {/* ══ SCROLLABLE BODY ══ */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+          {/* ══ FEASIBILITY CONTEXT BANNER (chained from Agent 1) ══ */}
+          {feasibilityReport && (
+            <div style={{
+              background: 'rgba(59,130,246,0.07)',
+              border: '1px solid rgba(59,130,246,0.2)',
+              borderRadius: 10,
+              padding: '0.75rem 1rem',
+              marginBottom: '0.25rem',
+            }}>
+              <div style={{ fontSize: '0.68rem', color: 'rgba(59,130,246,0.8)', fontWeight: 700,
+                textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.5rem',
+                display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span>🔗</span> Chained from Agent 1 — Feasibility Report
+              </div>
+              <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 900, color: feasibilityReport.overallScore >= 80 ? '#4ade80' : feasibilityReport.overallScore >= 65 ? '#fbbf24' : '#f87171', lineHeight: 1 }}>
+                    {feasibilityReport.overallScore}%
+                  </div>
+                  <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>Overall Score</div>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#93c5fd', fontWeight: 600 }}>
+                  {feasibilityReport.verdict}
+                </div>
+                {['technical','timeline','resource','skillMatch'].map(k => (
+                  <div key={k} style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'rgba(255,255,255,0.7)' }}>
+                      {feasibilityReport.metrics?.[k] ?? '—'}%
+                    </div>
+                    <div style={{ fontSize: '0.58rem', color: 'rgba(255,255,255,0.3)', textTransform: 'capitalize' }}>{k}</div>
+                  </div>
+                ))}
+              </div>
+              {feasibilityReport.bottlenecks?.length > 0 && (
+                <div style={{ marginTop: '0.5rem', fontSize: '0.72rem', color: 'rgba(251,191,36,0.75)',
+                  borderTop: '1px solid rgba(59,130,246,0.15)', paddingTop: '0.4rem' }}>
+                  ⚠️ Key bottleneck: {feasibilityReport.bottlenecks[0]}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Beginner tip */}
           <div style={{

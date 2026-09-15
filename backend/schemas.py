@@ -99,6 +99,8 @@ class ScopeRequest(BaseModel):
     features: Optional[List[str]] = []
     studentSkills: Optional[Dict[str, int]] = {}
     uploadedFiles: Optional[List[FileUpload]] = []
+    # Agent chaining: Feasibility report passed from Agent 1
+    feasibilityReport: Optional[Dict] = None
 
 
 class ScopeResponse(BaseModel):
@@ -110,4 +112,51 @@ class ScopeResponse(BaseModel):
     keyDeliverables: List[str]
     assumptions: List[str]
     constraints: List[str]
+    overallScore: Optional[int] = None
+    metrics: Optional[Dict] = None
+    # Agent chaining: Feasibility Agent (Agent 1) output is forwarded in the
+    # scope response so the frontend and downstream agents always have it.
+    feasibilityReport: Optional[Dict] = None
+    aiGenerated: Optional[bool] = False
+
+
+# ── Tech Stack Agent (Agent 3) ────────────────────────────────────────────────
+
+class TechStackRequest(BaseModel):
+    idea_id: Optional[str] = ""
+    student_email: Optional[str] = ""
+    title: str
+    desc: str
+    domain: Optional[str] = "web"
+    teamSize: Optional[str] = "3"
+    durationDays: Optional[int] = 30
+    techIdeas: Optional[str] = ""
+    features: Optional[List[str]] = []
+    studentSkills: Optional[Dict[str, int]] = {}
+    # Agent chaining: outputs from Agent 1 and Agent 2 are required
+    feasibilityReport: Dict  # required — output from Feasibility Agent
+    scopeReport: Dict        # required — output from Scope Agent
+
+
+class TechStackLayer(BaseModel):
+    frontend: str
+    backend: str
+    database: str
+    apis: str
+    devops: str
+    testing: str
+
+
+class TechStackAlternative(BaseModel):
+    layer: str
+    alternative: str
+    tradeoff: str
+
+
+class TechStackResponse(BaseModel):
+    recommendedStack: TechStackLayer
+    reasoning: List[str]          # step-by-step reasoning chain (the key feature)
+    alternatives: List[TechStackAlternative]
+    justification: str
+    learningResources: List[str]
     aiGenerated: Optional[bool] = False
