@@ -240,6 +240,7 @@
     "team_size": "3",
     "updated_at": "2026-09-13T15:54:49.134657",
     "student_id": "st_1789295088"
+<<<<<<< HEAD
   },
   "hemapriyas047@gmail.com": {
     "first_name": "hema",
@@ -274,5 +275,7 @@
     "rollNo": "21cs101",
     "aboutMe": "",
     "teamSize": "3"
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
   }
 }

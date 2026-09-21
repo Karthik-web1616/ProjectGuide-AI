@@ -19,7 +19,10 @@ STUDENTS_COLLECTION = "students"
 PROJECT_IDEAS_COLLECTION = "project_ideas"
 FEASIBILITY_REPORTS_COLLECTION = "feasibility_reports"
 SCOPE_REPORTS_COLLECTION = "scope_reports"
+<<<<<<< HEAD
 TRACKING_REPORTS_COLLECTION = "tracking_reports"
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +151,7 @@ def make_scope_report_doc(idea_id: str, student_id: str, report: dict, meta: dic
         "duration_days": meta.get("durationDays", 0),
         "tech_ideas": meta.get("techIdeas", ""),
         "updated_at": now_utc(),
+<<<<<<< HEAD
     }
 
 
@@ -176,4 +180,6 @@ def make_tracking_report_doc(idea_id: str, student_id: str, report: dict, meta: 
         "ai_generated": report.get("aiGenerated", False),
         "project_title": meta.get("title", ""),
         "updated_at": now_utc(),
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
     }

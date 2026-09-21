@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 from typing import Any, Dict, List, Optional, Union
+=======
+from typing import Dict, List, Optional, Union
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
 from pydantic import BaseModel
 
 
@@ -159,6 +163,7 @@ class TechStackResponse(BaseModel):
     alternatives: List[TechStackAlternative]
     justification: str
     learningResources: List[str]
+<<<<<<< HEAD
     aiGenerated: Optional[bool] = False
 
 
@@ -221,3 +226,6 @@ class MilestoneToggleResponse(BaseModel):
     milestonesDone: int
     totalMilestones: int
     overallProgress: int
+=======
+    aiGenerated: Optional[bool] = False
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796

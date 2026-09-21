@@ -55,6 +55,7 @@ export async function fetchTechStackReport(payload) {
   return postJSON('/api/tech-stack', payload);
 }
 
+<<<<<<< HEAD
 // Agent 4: Tracking — chains upstream Feasibility, Scope, and Tech Stack reports
 export async function fetchTrackingReport(payload) {
   return postJSON('/api/tracking', payload);
@@ -74,6 +75,8 @@ export async function fetchProjectTracking(ideaId) {
 }
 
 
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
 export async function fetchUserIdeas(email) {
   const url = email ? `${API_BASE}/api/ideas?email=${encodeURIComponent(email)}` : `${API_BASE}/api/ideas`;
   const res = await fetch(url);

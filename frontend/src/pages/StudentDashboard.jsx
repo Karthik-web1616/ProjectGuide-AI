@@ -5,7 +5,10 @@ import ChatbotPanel from '../components/ChatbotPanel';
 import FeasibilityReportModal from '../components/FeasibilityReportModal';
 import ScopeReportModal from '../components/ScopeReportModal';
 import TechStackReportModal from '../components/TechStackReportModal';
+<<<<<<< HEAD
 import TrackingReportModal from '../components/TrackingReportModal';
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
 import { Store, fmtDate } from '../utils/store';
 import { showToast } from '../utils/toast';
 import {
@@ -13,8 +16,11 @@ import {
   fetchFeasibilityReport,
   fetchScopeReport,
   fetchTechStackReport,
+<<<<<<< HEAD
   fetchTrackingReport,
   toggleMilestoneStatus,
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
   getUserProfile,
   fetchUserIdeas,
   updateIdeaInBackend,
@@ -46,12 +52,15 @@ export default function StudentDashboard() {
   const [selectedTechStackReport, setSelectedTechStackReport] = useState(null);
   const [isTechStackModalOpen, setIsTechStackModalOpen] = useState(false);
   const [techStackingProjectTitle, setTechStackingProjectTitle] = useState(null);
+<<<<<<< HEAD
 
   // AI Tracking Agent State (Real CrewAI + Groq — Agent 4, chained)
   const [selectedTrackingReport, setSelectedTrackingReport] = useState(null);
   const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
   const [trackingProjectTitle, setTrackingProjectTitle] = useState(null);
 
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
   
   // Idea Form State
   const [ideaTitle, setIdeaTitle] = useState('');
@@ -415,6 +424,7 @@ export default function StudentDashboard() {
       setTechStackingProjectTitle(null);
     }
   };
+<<<<<<< HEAD
 
   // ── Tracking Agent handler (Agent 4 — chained from Agents 1, 2, and 3) ──
   const handleRunTracking = async (proj, pIndex = null) => {
@@ -534,6 +544,8 @@ export default function StudentDashboard() {
     }
   };
 
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
   const handleAvatarUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1262,6 +1274,7 @@ export default function StudentDashboard() {
                           </div>
                         </div>
 
+<<<<<<< HEAD
                         {/* ── 4. TRACKING AGENT ✅ Built (Agent 4 — chained) ── */}
                         <div
                           className={`agent-card tracking built ${trackingProjectTitle === proj.title ? 'running' : ''}`}
@@ -1344,6 +1357,9 @@ export default function StudentDashboard() {
                         </div>
 
                         {/* ── 5. RISK AGENT 🔲 Coming Soon ── */}
+=======
+                        {/* ── 4. RISK AGENT 🔲 Coming Soon ── */}
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
                         <div className="agent-card coming-soon">
                           <div className="agent-card-top">
                             <div className="agent-icon rose">⚠️</div>
@@ -1356,6 +1372,21 @@ export default function StudentDashboard() {
                           <div className="agent-lock">🔒 Not yet built</div>
                         </div>
 
+<<<<<<< HEAD
+=======
+                        {/* ── 5. MILESTONE AGENT 🔲 Coming Soon ── */}
+                        <div className="agent-card coming-soon">
+                          <div className="agent-card-top">
+                            <div className="agent-icon teal">🗺️</div>
+                            <div className="agent-name">
+                              Blueprint Agent
+                              <div className="agent-subtext">Milestones · Sprint Plan</div>
+                            </div>
+                            <span className="agent-status-pill soon">Soon</span>
+                          </div>
+                          <div className="agent-lock">🔒 Not yet built</div>
+                        </div>
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
 
                       </div>
                     </div>
@@ -1762,6 +1793,7 @@ export default function StudentDashboard() {
           onClose={() => setIsTechStackModalOpen(false)}
         />
       )}
+<<<<<<< HEAD
 
       {/* AI Tracking & Milestone Roadmap Modal (Agent 4 — chained) */}
       {isTrackingModalOpen && (
@@ -1772,6 +1804,8 @@ export default function StudentDashboard() {
           onToggleMilestone={handleToggleMilestone}
         />
       )}
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
     </>
   );
 }

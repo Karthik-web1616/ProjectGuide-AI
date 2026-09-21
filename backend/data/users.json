@@ -241,6 +241,7 @@
     ],
     "hasCompletedProfile": true,
     "createdAt": "2026-09-13T15:54:48.449536"
+<<<<<<< HEAD
   },
   "hemapriyas047@gmail.com": {
     "email": "hemapriyas047@gmail.com",
@@ -269,5 +270,7 @@
     "hasCompletedProfile": true,
     "createdAt": "2026-09-16T16:19:01.299402",
     "teamSize": "3"
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
   }
 }

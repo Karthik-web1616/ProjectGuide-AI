@@ -10,8 +10,11 @@ load_dotenv(dotenv_path=_env_path)
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://<username>:<password>@cluster0.mongodb.net/?retryWrites=true&w=majority")
 DB_NAME = os.getenv("DB_NAME", "ProjectGuide-AI")
+<<<<<<< HEAD
 MONGO_SERVER_SELECTION_TIMEOUT_MS = int(os.getenv("MONGO_SERVER_SELECTION_TIMEOUT_MS", "10000"))
 MONGO_CONNECT_TIMEOUT_MS = int(os.getenv("MONGO_CONNECT_TIMEOUT_MS", "10000"))
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
 
 client = None
 db = None
@@ -24,15 +27,25 @@ def get_database():
             import certifi
             client = MongoClient(
                 MONGO_URI,
+<<<<<<< HEAD
                 serverSelectionTimeoutMS=MONGO_SERVER_SELECTION_TIMEOUT_MS,
                 connectTimeoutMS=MONGO_CONNECT_TIMEOUT_MS,
+=======
+                serverSelectionTimeoutMS=2000,
+                connectTimeoutMS=2000,
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
                 tlsCAFile=certifi.where()
             )
         except Exception:
             client = MongoClient(
                 MONGO_URI,
+<<<<<<< HEAD
                 serverSelectionTimeoutMS=MONGO_SERVER_SELECTION_TIMEOUT_MS,
                 connectTimeoutMS=MONGO_CONNECT_TIMEOUT_MS
+=======
+                serverSelectionTimeoutMS=2000,
+                connectTimeoutMS=2000
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
             )
         db = client[DB_NAME]
         try:
@@ -80,6 +93,7 @@ def _ensure_indexes(database):
         name="scope_student_id_idx",
     )
 
+<<<<<<< HEAD
     # tracking_reports: one per idea
     database["tracking_reports"].create_index(
         [("idea_id", ASCENDING)],
@@ -91,6 +105,8 @@ def _ensure_indexes(database):
     )
 
 
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
 
 def check_db_connection():
     """Utility to test whether the MongoDB connection is alive."""
@@ -123,7 +139,10 @@ def get_feasibility_reports_collection():
 
 def get_scope_reports_collection():
     return get_database()["scope_reports"]
+<<<<<<< HEAD
 
 
 def get_tracking_reports_collection():
     return get_database()["tracking_reports"]
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796

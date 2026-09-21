@@ -25,10 +25,14 @@ import re
 import traceback
 from typing import Optional
 
+<<<<<<< HEAD
 try:
     from crewai import Agent, Crew, Task
 except ImportError:
     Agent = Crew = Task = None
+=======
+from crewai import Agent, Crew, Task
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
 from dotenv import load_dotenv
 
 from agents.file_extractor import extract_text_from_files

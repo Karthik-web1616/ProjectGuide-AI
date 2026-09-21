@@ -2800,11 +2800,14 @@ input, textarea, select { font-family: var(--font); }
 .agent-card.tech-stack { background: linear-gradient(135deg, rgba(245,158,11,0.07), rgba(251,146,60,0.04)); }
 .agent-card.tech-stack:hover { border-color: rgba(245,158,11,0.4); box-shadow: 0 8px 28px rgba(245,158,11,0.15); }
 
+<<<<<<< HEAD
 /* Tracking = teal/emerald */
 .agent-card.tracking { background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(20,184,166,0.05)); }
 .agent-card.tracking:hover { border-color: rgba(16,185,129,0.45); box-shadow: 0 8px 28px rgba(16,185,129,0.18); }
 
 
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
 /* Coming soon = dimmed, no pointer */
 .agent-card.coming-soon {
   opacity: 0.55;
@@ -2985,6 +2988,7 @@ input, textarea, select { font-family: var(--font); }
   color: #fde68a;
 }
 
+<<<<<<< HEAD
 .agent-btn-teal {
   background: rgba(16,185,129,0.18);
   color: #6ee7b7;
@@ -2997,6 +3001,8 @@ input, textarea, select { font-family: var(--font); }
 }
 
 
+=======
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
 .agent-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;

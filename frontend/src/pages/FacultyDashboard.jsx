@@ -3,11 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import ChatbotPanel from '../components/ChatbotPanel';
 import FeasibilityReportModal from '../components/FeasibilityReportModal';
+<<<<<<< HEAD
 import TrackingReportModal from '../components/TrackingReportModal';
 import { Store, fmtRelative } from '../utils/store';
 import { showToast } from '../utils/toast';
 import { SKILLS, LEVEL_LABELS } from '../utils/constants';
 import { fetchFeasibilityReport, fetchTrackingReport, fetchUserIdeas } from '../utils/api';
+=======
+import { Store, fmtRelative } from '../utils/store';
+import { showToast } from '../utils/toast';
+import { SKILLS, LEVEL_LABELS } from '../utils/constants';
+import { fetchFeasibilityReport, fetchUserIdeas } from '../utils/api';
+>>>>>>> 4a642e878f362a881e451424b7b7a885d9dca796
 
 const STUDENTS_MOCK = [
   {
